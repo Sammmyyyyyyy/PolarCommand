@@ -14,15 +14,16 @@ import {
   Calendar,
   Users,
   Package,
+  Wind,
 } from 'lucide-react';
 import { Movement } from '../types';
-import { fetchMovements, createMovement, updateMovement } from '../services/api';
+import { fetchMovements, createMovement, updateMovement, applyMovementWeatherConstraint } from '../services/api';
 import { useExpedition } from '../context/ExpeditionContext';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/common/Modal';
 
 export const MovementsPage: React.FC = () => {
-  const { currentExpeditionId, currentExpedition, triggerRefresh } = useExpedition();
+  const { currentExpeditionId, currentExpedition, dashboard, triggerRefresh } = useExpedition();
   const { canEditOperationalData } = useAuth();
 
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -100,6 +101,23 @@ export const MovementsPage: React.FC = () => {
       triggerRefresh();
     } catch (err: any) {
       alert(err.message || 'Failed to update movement status');
+    }
+  };
+
+  const handleApplyWeather = async (movementId: string) => {
+    if (!currentExpeditionId) return;
+    const stationId = dashboard?.stationsSummary[0]?.id;
+    if (!stationId) {
+      alert('No station found to evaluate local weather conditions for transit route.');
+      return;
+    }
+    try {
+      const updated = await applyMovementWeatherConstraint(currentExpeditionId, movementId, stationId);
+      await loadMovements();
+      triggerRefresh();
+      alert(`Open-Meteo Weather Constraint Applied: ${updated.weatherConstraint || 'Weather evaluated nominal.'}`);
+    } catch (err: any) {
+      alert(`Weather constraint evaluation failed: ${err.message}`);
     }
   };
 
@@ -242,7 +260,7 @@ export const MovementsPage: React.FC = () => {
                   <div className="flex items-center justify-between mb-2">
                     <span className="flex items-center space-x-1.5 text-xs font-bold text-slate-900">
                       {getTypeIcon(item.type || 'OVERLAND_TRAVERSE')}
-                      <span>{(item.type || 'TRANSIT').replace('_', ' ')}</span>
+                      <span>{item.movementCode || (item.type || 'TRANSIT').replace('_', ' ')}</span>
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
@@ -274,9 +292,15 @@ export const MovementsPage: React.FC = () => {
                         {item.departureDate} to {item.arrivalDate}
                       </span>
                     </div>
+                    {item.delayHours && item.delayHours > 0 && (
+                      <div className="flex items-center justify-between text-rose-700 bg-rose-50 px-2 py-1 rounded border border-rose-200 font-bold">
+                        <span>Operational Delay:</span>
+                        <span>+{item.delayHours} Hours</span>
+                      </div>
+                    )}
                     {item.vesselName && (
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Vessel:</span>
+                        <span className="text-slate-400 font-medium">Vessel / Asset:</span>
                         <span className="font-medium text-slate-800">{item.vesselName}</span>
                       </div>
                     )}
@@ -288,37 +312,57 @@ export const MovementsPage: React.FC = () => {
                     )}
                   </div>
 
+                  {item.weatherConstraint && (
+                    <div className="mt-2.5 p-2 bg-amber-50/90 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex items-start space-x-1.5">
+                      <Wind className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Weather Constraint:</strong> {item.weatherConstraint}
+                      </div>
+                    </div>
+                  )}
+
                   {item.notes && (
-                    <p className="text-[11px] text-slate-500 mt-2.5 italic">"{item.notes}"</p>
+                    <p className="text-[11px] text-slate-500 mt-2 italic">"{item.notes}"</p>
                   )}
                 </div>
 
                 {canEditOperationalData && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2 text-xs">
-                    {item.status !== 'Completed' && (
-                      <button
-                        onClick={() => handleUpdateStatus(item.id, 'Completed')}
-                        className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded font-semibold transition"
-                      >
-                        Mark Completed
-                      </button>
-                    )}
-                    {item.status !== 'In Transit' && item.status !== 'Completed' && (
-                      <button
-                        onClick={() => handleUpdateStatus(item.id, 'In Transit')}
-                        className="px-2 py-1 bg-sky-50 text-sky-700 hover:bg-sky-100 rounded font-semibold transition"
-                      >
-                        Start Transit
-                      </button>
-                    )}
-                    {item.status !== 'Delayed' && item.status !== 'Completed' && (
-                      <button
-                        onClick={() => handleUpdateStatus(item.id, 'Delayed')}
-                        className="px-2 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded font-semibold transition"
-                      >
-                        Flag Delay
-                      </button>
-                    )}
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <button
+                      onClick={() => handleApplyWeather(item.id)}
+                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold transition flex items-center space-x-1 text-[11px]"
+                      title="Fetch live Open-Meteo station telemetry and calculate weather delay & travel feasibility"
+                    >
+                      <Wind className="w-3 h-3 text-amber-600" />
+                      <span>Check Weather Delay</span>
+                    </button>
+
+                    <div className="flex items-center space-x-1.5">
+                      {item.status !== 'Completed' && (
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, 'Completed')}
+                          className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded font-semibold transition"
+                        >
+                          Arrived
+                        </button>
+                      )}
+                      {item.status !== 'In Transit' && item.status !== 'Completed' && (
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, 'In Transit')}
+                          className="px-2 py-1 bg-sky-50 text-sky-700 hover:bg-sky-100 rounded font-semibold transition"
+                        >
+                          Depart
+                        </button>
+                      )}
+                      {item.status !== 'Delayed' && item.status !== 'Completed' && (
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, 'Delayed')}
+                          className="px-2 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded font-semibold transition"
+                        >
+                          Delay
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

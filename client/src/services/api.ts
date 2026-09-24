@@ -15,6 +15,15 @@ import {
   AuditLog,
   Movement,
   User,
+  Organization,
+  Task,
+  CheckInLog,
+  PersonnelAccountabilitySummary,
+  WeatherConditionReport,
+  FieldObservation,
+  OperationalDocument,
+  ExpeditionReadinessResult,
+  OrganizationOverview,
 } from '../types';
 
 const API_BASE = '/api';
@@ -592,3 +601,321 @@ export async function fetchAuditLogs(expeditionId: string): Promise<AuditLog[]> 
   if (!res.ok) throw new Error('Failed to fetch audit activity');
   return res.json();
 }
+
+// -------------------------------------------------------------
+// Organizations
+// -------------------------------------------------------------
+export async function fetchOrganizations(): Promise<Organization[]> {
+  const res = await fetch(`${API_BASE}/organizations`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch organizations');
+  return res.json();
+}
+
+export async function fetchOrganization(id: string): Promise<Organization> {
+  const res = await fetch(`${API_BASE}/organizations/${id}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch organization details');
+  return res.json();
+}
+
+export async function createOrganization(data: any): Promise<Organization> {
+  const res = await fetch(`${API_BASE}/organizations`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create organization');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Expedition Lifecycle & Publish
+// -------------------------------------------------------------
+export async function publishExpedition(expeditionId: string): Promise<Expedition> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/publish`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to publish expedition');
+  }
+  return res.json();
+}
+
+export async function updateExpeditionLifecycle(expeditionId: string, lifecycleStatus: string): Promise<Expedition> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/lifecycle`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ lifecycleStatus }),
+  });
+  if (!res.ok) throw new Error('Failed to update expedition lifecycle');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Tasks & Mission Operations
+// -------------------------------------------------------------
+export async function fetchTasks(
+  expeditionId: string,
+  filter?: { status?: string; priority?: string; personnelId?: string; stationId?: string }
+): Promise<Task[]> {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set('status', filter.status);
+  if (filter?.priority) params.set('priority', filter.priority);
+  if (filter?.personnelId) params.set('personnelId', filter.personnelId);
+  if (filter?.stationId) params.set('stationId', filter.stationId);
+
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/tasks${qs}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch operational tasks');
+  return res.json();
+}
+
+export async function fetchTaskById(expeditionId: string, taskId: string): Promise<Task> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/tasks/${taskId}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch task');
+  return res.json();
+}
+
+export async function createTask(expeditionId: string, data: any): Promise<Task> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/tasks`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create mission task');
+  return res.json();
+}
+
+export async function updateTask(expeditionId: string, taskId: string, data: any): Promise<Task> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/tasks/${taskId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update task');
+  return res.json();
+}
+
+export async function updateTaskStatus(
+  expeditionId: string,
+  taskId: string,
+  status: string,
+  options?: { notes?: string; fieldObservations?: string }
+): Promise<Task> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/tasks/${taskId}/status`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ status, ...options }),
+  });
+  if (!res.ok) throw new Error('Failed to update task status');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Check-In & Personnel Accountability
+// -------------------------------------------------------------
+export async function recordCheckIn(
+  expeditionId: string,
+  personnelId: string,
+  data: {
+    status: string;
+    location?: string;
+    stationName?: string;
+    latitude?: number;
+    longitude?: number;
+    notes?: string;
+  }
+): Promise<{ log: CheckInLog; nextCheckIn: string }> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/personnel/${personnelId}/check-in`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to record check-in');
+  return res.json();
+}
+
+export async function fetchPersonnelAccountability(expeditionId: string): Promise<PersonnelAccountabilitySummary> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/personnel-accountability`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to load personnel accountability');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Cargo Receiving at Station
+// -------------------------------------------------------------
+export async function receiveCargo(
+  expeditionId: string,
+  cargoId: string,
+  payload: {
+    receivedQuantity?: number;
+    conditionOnArrival?: string;
+    receivingNotes?: string;
+  }
+): Promise<{ cargo: CargoShipment; inventory: InventoryItem }> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/cargo/${cargoId}/receive`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to mark cargo received');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Emergency SOS & Incident Resolution
+// -------------------------------------------------------------
+export async function triggerEmergencySos(
+  expeditionId: string,
+  data: { message?: string; location?: string; latitude?: number; longitude?: number }
+): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/emergency/sos`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to transmit emergency SOS beacon');
+  return res.json();
+}
+
+export async function resolveIncident(
+  expeditionId: string,
+  incId: string,
+  payload?: { resolutionNotes?: string }
+): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/incidents/${incId}/resolve`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  if (!res.ok) throw new Error('Failed to resolve incident');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Weather Telemetry (Open-Meteo Integration with Cache / Force Refresh)
+// -------------------------------------------------------------
+export async function fetchStationWeather(
+  expeditionId: string,
+  stationId: string,
+  refresh = false
+): Promise<WeatherConditionReport> {
+  const url = `${API_BASE}/expeditions/${expeditionId}/stations/${stationId}/weather${refresh ? '?refresh=true' : ''}`;
+  const res = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch station weather telemetry');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Operational Readiness & Lifecycle
+// -------------------------------------------------------------
+export async function fetchExpeditionReadiness(expeditionId: string): Promise<ExpeditionReadinessResult> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/readiness`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to evaluate expedition operational readiness');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Movement Weather Constraint Application
+// -------------------------------------------------------------
+export async function applyMovementWeatherConstraint(
+  expeditionId: string,
+  movementId: string,
+  stationId: string
+): Promise<Movement> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/movements/${movementId}/weather-constraint`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ stationId }),
+  });
+  if (!res.ok) throw new Error('Failed to apply weather constraint to movement');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Field Observations
+// -------------------------------------------------------------
+export async function fetchFieldObservations(
+  expeditionId: string,
+  category?: string,
+  severity?: string
+): Promise<FieldObservation[]> {
+  const params = new URLSearchParams();
+  if (category && category !== 'ALL') params.append('category', category);
+  if (severity && severity !== 'ALL') params.append('severity', severity);
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/observations?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch field observations');
+  return res.json();
+}
+
+export async function createFieldObservation(
+  expeditionId: string,
+  data: Partial<FieldObservation>
+): Promise<FieldObservation> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/observations`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create field observation');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Operational Documents & Reports
+// -------------------------------------------------------------
+export async function fetchOperationalDocuments(
+  expeditionId: string,
+  entityType?: string,
+  entityId?: string
+): Promise<OperationalDocument[]> {
+  const params = new URLSearchParams();
+  if (entityType) params.append('entityType', entityType);
+  if (entityId) params.append('entityId', entityId);
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/documents?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch operational documents');
+  return res.json();
+}
+
+export async function attachOperationalDocument(
+  expeditionId: string,
+  data: Partial<OperationalDocument>
+): Promise<OperationalDocument> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/documents`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to attach operational document');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Organization Management
+// -------------------------------------------------------------
+export async function fetchOrganizationOverview(organizationId: string): Promise<OrganizationOverview> {
+  const res = await fetch(`${API_BASE}/organizations/${organizationId}/overview`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch organization overview');
+  return res.json();
+}
+
+export async function fetchResourceAvailability(expeditionId: string, orgId?: string): Promise<any> {
+  const url = `${API_BASE}/expeditions/${expeditionId}/resource-availability${orgId ? `?orgId=${orgId}` : ''}`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch resource availability');
+  return res.json();
+}
+
+
+

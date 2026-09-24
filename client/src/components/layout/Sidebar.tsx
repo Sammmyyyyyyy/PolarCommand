@@ -18,8 +18,10 @@ import {
   Radio,
   ChevronLeft,
   ChevronRight,
+  Compass,
 } from 'lucide-react';
 import { useExpedition } from '../../context/ExpeditionContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
   currentPath: string;
@@ -35,10 +37,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
 }) => {
   const { currentExpedition, dashboard } = useExpedition();
+  const { currentRole } = useAuth();
 
   const activeAlerts = dashboard?.kpi.activeAlerts ?? 0;
 
-  const navItems = [
+  const allNavItems = [
+    { id: '/field', label: 'Field Workspace', icon: Compass, forField: true },
     { id: '/dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: '/expeditions', label: 'Expeditions Hub', icon: FolderOpen },
     { id: '/expedition', label: 'Expedition Planning', icon: CalendarDays },
@@ -52,8 +56,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: '/simulations', label: 'What-If Simulation', icon: SlidersHorizontal },
     { id: '/alerts', label: 'Alerts & Actions', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
     { id: '/analytics', label: 'Analytics & Reports', icon: BarChart3 },
+    { id: '/organization', label: 'Organization Admin', icon: Globe },
     { id: '/optimization', label: 'Resource Optimization', icon: Sparkles, bonus: true },
   ];
+
+  // If role is FIELD_MEMBER, keep Field Workspace at the top, else standard order
+  const navItems = currentRole === 'FIELD_MEMBER'
+    ? allNavItems
+    : [
+        allNavItems[1], // Command Center
+        allNavItems[0], // Field Workspace
+        ...allNavItems.slice(2),
+      ];
 
   return (
     <aside

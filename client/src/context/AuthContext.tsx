@@ -70,7 +70,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchRole = (role: UserRole) => {
     setCurrentRole(role);
     if (currentUser) {
-      setCurrentUser({ ...currentUser, role });
+      let updatedName = currentUser.name;
+      let email = currentUser.email;
+      if (role === 'FIELD_MEMBER') {
+        updatedName = 'Elena Rostova (Field Specialist)';
+        email = 'field1@polarcommand.org';
+      } else if (role === 'COMMANDER') {
+        updatedName = 'Dr. Rajesh Nair (Commander)';
+        email = 'commander@polarcommand.org';
+      } else if (role === 'LOGISTICS_OFFICER') {
+        updatedName = 'Sven Lindqvist (Logistics Officer)';
+        email = 'logistics@polarcommand.org';
+      } else if (role === 'STATION_MANAGER') {
+        updatedName = 'Marcus Vance (Station Manager)';
+        email = 'station@polarcommand.org';
+      } else if (role === 'ADMIN') {
+        updatedName = 'Sarah Chen (Operations Director)';
+        email = 'admin@polarcommand.org';
+      } else if (role === 'VIEWER') {
+        updatedName = 'Guest Observer (Read-Only)';
+        email = 'viewer@polarcommand.org';
+      }
+      setCurrentUser({ ...currentUser, role, name: updatedName, email });
     }
   };
 

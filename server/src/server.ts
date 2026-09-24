@@ -3,6 +3,7 @@ import cors from 'cors';
 import { checkDatabaseConnection, prisma } from './config/database.js';
 import { authRouter } from './routes/auth.routes.js';
 import { expeditionRouter } from './routes/expedition.routes.js';
+import { organizationRouter } from './routes/organization.routes.js';
 import { seedDemoData } from './seed/demo-data.js';
 import { authenticateJWT } from './middleware/auth.middleware.js';
 import { ExpeditionService } from './services/expedition.service.js';
@@ -36,6 +37,7 @@ app.get('/api/health', async (_req, res) => {
 
 // Main Route Routers
 app.use('/api/auth', authRouter);
+app.use('/api/organizations', organizationRouter);
 app.use('/api/expeditions', expeditionRouter);
 
 // Helper to get active default expedition (INPEX-2027 or first available)

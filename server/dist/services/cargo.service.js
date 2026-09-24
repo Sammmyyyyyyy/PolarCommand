@@ -37,9 +37,9 @@ export class CargoService {
                 category: data.category,
                 weightKg: Number(data.weightKg) || 100,
                 quantity: Number(data.quantity) || 1,
-                origin: data.origin,
+                origin: data.origin || 'Main Logistics Base',
                 destination: data.destination,
-                currentLocation: data.currentLocation || data.origin,
+                currentLocation: data.currentLocation || data.origin || 'Main Logistics Base',
                 transportMode: data.transportMode || 'Vessel',
                 priority: data.priority || 'MEDIUM',
                 departureDate: new Date(data.departureDate || Date.now()),
@@ -47,7 +47,7 @@ export class CargoService {
                 originalEta: new Date(data.eta || Date.now() + 86400000 * 14),
                 delayHours: 0,
                 specialRequirements: data.specialRequirements || null,
-                status: data.status || 'Scheduled',
+                status: data.status || 'PLANNED',
                 vesselName: data.vesselName || null,
                 journeyJson: JSON.stringify([
                     { stage: 'Logistics Staging', location: data.origin, status: 'completed' },
@@ -81,6 +81,12 @@ export class CargoService {
             updateData.eta = new Date(data.eta);
         if (data.weightKg)
             updateData.weightKg = Number(data.weightKg);
+        // If logistics officer is increasing delay hours or changing status to Delayed
+        const isNewDelay = (data.delayHours && data.delayHours > prev.delayHours) || (data.status === 'DELAYED' && prev.status !== 'DELAYED');
+        if (isNewDelay) {
+            const addedDelay = (data.delayHours || 24) - prev.delayHours;
+            return this.applyOperationalCargoDelay(id, addedDelay > 0 ? addedDelay : 24, user);
+        }
         const updated = await prisma.cargo.update({
             where: { id },
             data: updateData,
@@ -120,7 +126,79 @@ export class CargoService {
         });
         return deleted;
     }
-    static async simulateCargoDelay(cargoId, delayHours, user) {
+    /**
+     * Station personnel receives cargo at destination base
+     */
+    static async receiveCargo(id, payload, user) {
+        const cargo = await prisma.cargo.findUnique({
+            where: { id },
+            include: { expedition: true },
+        });
+        if (!cargo)
+            throw new Error(`Cargo ${id} not found`);
+        const receivedQty = payload.receivedQuantity !== undefined ? Number(payload.receivedQuantity) : cargo.quantity;
+        const condition = payload.conditionOnArrival || 'Intact';
+        const finalStatus = condition.toLowerCase().includes('compromised') || condition.toLowerCase().includes('damage') ? 'DAMAGED' : 'DELIVERED';
+        const now = new Date();
+        const updated = await prisma.cargo.update({
+            where: { id },
+            data: {
+                status: finalStatus,
+                receivedAt: now,
+                receivedBy: user?.name || 'Station Receiving Officer',
+                receivedQuantity: receivedQty,
+                conditionOnArrival: condition,
+                receivingNotes: payload.receivingNotes || null,
+                currentLocation: cargo.destination,
+            },
+        });
+        // Replenish inventory at destination station
+        const catPrefix = cargo.category.slice(0, 3).toLowerCase();
+        const inventoryItem = await prisma.inventoryItem.findFirst({
+            where: {
+                expeditionId: cargo.expeditionId,
+                OR: [
+                    { linkedCargoId: cargo.id },
+                    { category: { contains: catPrefix } },
+                ],
+            },
+            include: { station: true },
+        });
+        let inventoryUpdated = null;
+        if (inventoryItem) {
+            const newStock = inventoryItem.currentStock + receivedQty;
+            const daily = inventoryItem.dailyUsage > 0 ? inventoryItem.dailyUsage : 1;
+            const newCoverage = newStock / daily;
+            const riskStatus = newCoverage > inventoryItem.safetyThresholdDays ? 'Normal' : 'Warning';
+            inventoryUpdated = await prisma.inventoryItem.update({
+                where: { id: inventoryItem.id },
+                data: {
+                    currentStock: newStock,
+                    riskStatus,
+                    replenishmentEta: null,
+                },
+            });
+        }
+        await RiskService.calculateAndRecordExpeditionRisk(cargo.expeditionId);
+        await AlertService.evaluateAndSyncAlerts(cargo.expeditionId);
+        await AuditService.record({
+            expeditionId: cargo.expeditionId,
+            userId: user?.id,
+            userName: user?.name || 'Station Logistics Officer',
+            userRole: user?.role || 'LOGISTICS_OFFICER',
+            action: 'RECEIVE_CARGO',
+            entity: 'Cargo',
+            entityId: id,
+            previousState: cargo.status,
+            newState: finalStatus,
+            reason: `Received consignment ${cargo.cargoCode} at ${cargo.destination}: ${receivedQty} units (${condition}). Stock replenished to ${inventoryUpdated?.currentStock || 'N/A'}.`,
+        });
+        return { cargo: updated, inventory: inventoryUpdated };
+    }
+    /**
+     * Real operational delay or simulation delay applied to live state
+     */
+    static async applyOperationalCargoDelay(cargoId, delayHours, user) {
         const cargo = await prisma.cargo.findUnique({
             where: { id: cargoId },
             include: { expedition: true },
@@ -139,8 +217,8 @@ export class CargoService {
                 status: 'Delayed',
             },
         });
-        // Check linked inventory for destination (by linkedCargoId or category prefix e.g. Med/Fuel/Food)
-        const catPrefix = cargo.category.slice(0, 3);
+        // Check destination inventory buffer impact
+        const catPrefix = cargo.category.slice(0, 3).toLowerCase();
         const destinationInventory = await prisma.inventoryItem.findFirst({
             where: {
                 expeditionId,
@@ -151,8 +229,8 @@ export class CargoService {
             },
             include: { station: true },
         });
-        let prevDays = 12;
-        let newDays = 8;
+        let prevDays = 14;
+        let newDays = 7;
         let affectedStationName = cargo.destination;
         if (destinationInventory) {
             affectedStationName = destinationInventory.station.name;
@@ -160,14 +238,14 @@ export class CargoService {
             prevDays = Math.round(destinationInventory.currentStock / daily);
             const daysDrop = Math.max(1, Math.round(delayHours / 24));
             const burnConsumption = daysDrop * daily;
-            const newStock = Math.max(20, destinationInventory.currentStock - burnConsumption);
+            const newStock = Math.max(15, destinationInventory.currentStock - burnConsumption);
             await prisma.inventoryItem.update({
                 where: { id: destinationInventory.id },
                 data: { currentStock: newStock, riskStatus: 'High Risk' },
             });
             newDays = Math.round(newStock / daily);
         }
-        // Cascade Risk & Alert Evaluation
+        // Recalculate Risk & Alerts
         const newRisk = await RiskService.calculateAndRecordExpeditionRisk(expeditionId);
         const alerts = await AlertService.evaluateAndSyncAlerts(expeditionId);
         // Emit Domain Event
@@ -181,16 +259,16 @@ export class CargoService {
         await AuditService.record({
             expeditionId,
             userId: user?.id,
-            userName: user?.name || 'Simulation Operator',
-            userRole: user?.role || 'COMMANDER',
-            action: 'SIMULATE_CARGO_DELAY',
+            userName: user?.name || 'Logistics Officer',
+            userRole: user?.role || 'LOGISTICS_OFFICER',
+            action: 'DELAY_CARGO',
             entity: 'Cargo',
             entityId: cargo.id,
             previousState: cargo.delayHours,
             newState: updated.delayHours,
-            reason: `Applied operational delay of +${delayHours}h to ${cargo.cargoCode} (${cargo.description})`,
+            reason: `Recorded operational transit delay of +${delayHours}h for ${cargo.cargoCode} (${cargo.description})`,
         });
-        const recommendation = `Reallocate ${destinationInventory?.category || 'supplies'} from surplus station to ${affectedStationName} and prioritize shipment ${cargo.cargoCode}.`;
+        const recommendation = `${destinationInventory?.category || 'Fuel/Medical'} reserve at ${affectedStationName} is projected to fall below the configured safety threshold (${destinationInventory?.safetyThresholdDays || 12} days) to ${newDays} days because Cargo ${cargo.cargoCode} is delayed by ${delayHours} hours. Reallocate reserve from neighboring station.`;
         return {
             cargo: updated,
             impact: {
@@ -205,20 +283,20 @@ export class CargoService {
                 impactChain: [
                     {
                         step: 1,
-                        title: 'Cargo Delay Triggered',
-                        description: `Shipment ${cargo.cargoCode} delayed by +${delayHours}h in maritime transit corridor.`,
+                        title: 'Cargo Delay Recorded',
+                        description: `Shipment ${cargo.cargoCode} delayed by +${delayHours}h in maritime corridor.`,
                         status: 'trigger',
                     },
                     {
                         step: 2,
                         title: 'Arrival Schedule Slip',
-                        description: `Antarctic coastal delivery pushed to ${newEta.toISOString().slice(0, 10)}.`,
+                        description: `Antarctic delivery pushed to ${newEta.toISOString().slice(0, 10)}.`,
                         status: 'cascade',
                     },
                     {
                         step: 3,
                         title: 'Inventory Buffer Breach',
-                        description: `${affectedStationName} reserve coverage dropped from ${prevDays} to ${newDays} days (safety buffer breached).`,
+                        description: `${affectedStationName} reserve coverage dropped from ${prevDays} to ${newDays} days (safety threshold breached).`,
                         status: 'breach',
                     },
                     {
@@ -243,5 +321,8 @@ export class CargoService {
             },
             alerts,
         };
+    }
+    static async simulateCargoDelay(cargoId, delayHours, user) {
+        return this.applyOperationalCargoDelay(cargoId, delayHours, user);
     }
 }

@@ -48,4 +48,8 @@ export class AuditService {
       },
     });
   }
+
+  public static async listAuditLogs(expeditionId?: string, limit = 50) {
+    return this.getRecentActivity(expeditionId, limit);
+  }
 }

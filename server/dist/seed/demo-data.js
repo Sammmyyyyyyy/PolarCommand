@@ -2,9 +2,11 @@ import { prisma } from '../config/database.js';
 import { AuthService } from '../services/auth.service.js';
 import { RiskService } from '../services/risk.service.js';
 import { AlertService } from '../services/alert.service.js';
+import { OrganizationService } from '../services/organization.service.js';
 export async function seedDemoData() {
     console.log('[SEED] Starting demo data initialization for POLAR COMMAND...');
-    // 1. Seed Users
+    // 1. Seed Organization & Users
+    const defaultOrg = await OrganizationService.getOrCreateDefaultOrganization();
     await AuthService.seedDefaultUsers();
     const commanderUser = await prisma.user.findFirst({ where: { role: 'COMMANDER' } });
     // 2. Check if INPEX-2027 exists
@@ -18,9 +20,11 @@ export async function seedDemoData() {
                 title: '44th Indian Antarctic Expedition',
                 type: 'Scientific Research & Inter-Station Polar Logistics',
                 missionObjective: 'Climate change atmospheric observation, ice sheet mass balance, and winter-over logistics sustainment.',
+                organizationId: defaultOrg.id,
                 commanderId: commanderUser?.id || null,
                 commanderName: commanderUser?.name || 'Dr. Rajesh Nair',
                 status: 'ACTIVE',
+                lifecycleStatus: 'ACTIVE',
                 startDate: new Date('2026-11-01'),
                 endDate: new Date('2027-11-30'),
                 origin: 'NCPOR Logistics Hub, Goa / Mumbai Port',
@@ -497,7 +501,107 @@ export async function seedDemoData() {
         }
         console.log('[SEED] Seeded first-class transit movements.');
     }
-    // 9. Recalculate baseline Risk & Alerts
+    // 9. Seed Operational Tasks
+    const taskCount = await prisma.task.count({ where: { expeditionId } });
+    if (taskCount === 0) {
+        const engineer = await prisma.personnel.findFirst({ where: { expeditionId, role: 'Engineer' } });
+        const scientist = await prisma.personnel.findFirst({ where: { expeditionId, role: 'Scientist' } });
+        const pb07 = await prisma.asset.findFirst({ where: { expeditionId, assetCode: 'PB-07' } });
+        await prisma.task.createMany({
+            data: [
+                {
+                    expeditionId,
+                    title: 'Sub-Surface Ice Core Stratigraphy Borehole Drilling',
+                    description: 'Extract 120m firn and ice cores at Field Camp Fox-3 for atmospheric aerosol isotope profiling.',
+                    priority: 'HIGH',
+                    status: 'IN_PROGRESS',
+                    location: 'Field Camp Fox-3 (70 km S)',
+                    assignedPersonnelId: scientist?.id || null,
+                    requiredAssetId: pb07?.id || null,
+                    startTime: new Date('2027-01-05'),
+                    dueTime: new Date('2027-01-16'),
+                    notes: 'Weather window restricted to katabatic lull between 06:00 and 14:00 UTC.',
+                },
+                {
+                    expeditionId,
+                    title: 'Primary Caterpillar Generator Auxiliary Heating Filter Overhaul',
+                    description: 'Depot preventive maintenance service. Replace oil separation filter cartridges and calibrate cold-start injectors.',
+                    priority: 'MEDIUM',
+                    status: 'ASSIGNED',
+                    location: 'Bharati Power Generation Annex',
+                    assignedPersonnelId: engineer?.id || null,
+                    startTime: new Date('2027-01-08'),
+                    dueTime: new Date('2027-01-18'),
+                    notes: 'Secondary backup generator GEN-02 must remain online in hot-standby during maintenance.',
+                },
+                {
+                    expeditionId,
+                    title: 'Fast Ice Traverse Route Radar Reconnaissance',
+                    description: 'Ground-penetrating radar profiling of tidal cracks along Larsemann Hills - Prydz Bay sea ice shelf.',
+                    priority: 'CRITICAL',
+                    status: 'IN_PROGRESS',
+                    location: 'Prydz Bay Sea Ice Corridor',
+                    assignedPersonnelId: scientist?.id || null,
+                    startTime: new Date('2027-01-09'),
+                    dueTime: new Date('2027-01-14'),
+                    notes: 'Essential route clearance for incoming cargo offload from MV Polar Queen.',
+                },
+                {
+                    expeditionId,
+                    title: 'Satellite Uplink Radome Heating De-Icing Verification',
+                    description: 'Inspect thermal heating elements on 4.5m Ku-band tracking antenna dome following coastal blizzard.',
+                    priority: 'LOW',
+                    status: 'COMPLETED',
+                    location: 'Bharati Communications Mast',
+                    assignedPersonnelId: engineer?.id || null,
+                    startTime: new Date('2027-01-03'),
+                    dueTime: new Date('2027-01-04'),
+                    completionTime: new Date('2027-01-04'),
+                    notes: 'Heaters nominal. VSAT link margin restored to +14 dB.',
+                    fieldObservations: 'Minimal riming observed on radome base; secondary de-icing blower functional.',
+                },
+            ],
+        });
+        console.log('[SEED] Seeded 4 operational tasks.');
+    }
+    // 10. Seed Check-In Records and Personnel Linkage
+    const allPersonnel = await prisma.personnel.findMany({ where: { expeditionId } });
+    const field1User = await prisma.user.findUnique({ where: { email: 'field1@polarcommand.org' } });
+    if (field1User && allPersonnel[0]) {
+        await prisma.user.update({
+            where: { id: field1User.id },
+            data: { assignedPersonnelId: allPersonnel.find((p) => p.role === 'Scientist')?.id || allPersonnel[0].id },
+        });
+    }
+    const checkInCount = await prisma.checkInLog.count({ where: { expeditionId } });
+    if (checkInCount === 0) {
+        const now = new Date();
+        for (const p of allPersonnel) {
+            await prisma.checkInLog.create({
+                data: {
+                    expeditionId,
+                    personnelId: p.id,
+                    status: p.checkInStatus || 'ACTIVE',
+                    stationName: p.currentLocation,
+                    location: p.currentLocation,
+                    latitude: p.latitude || -69.4,
+                    longitude: p.longitude || 76.2,
+                    notes: 'Standard scheduled operational watch check-in. Systems nominal.',
+                    timestamp: now,
+                },
+            });
+            await prisma.personnel.update({
+                where: { id: p.id },
+                data: {
+                    lastCheckIn: now,
+                    expectedNextCheckIn: new Date(now.getTime() + 12 * 3600 * 1000),
+                    isCheckInOverdue: false,
+                },
+            });
+        }
+        console.log('[SEED] Seeded accountability check-ins for all active personnel.');
+    }
+    // 11. Recalculate baseline Risk & Alerts
     await RiskService.calculateAndRecordExpeditionRisk(expeditionId);
     await AlertService.evaluateAndSyncAlerts(expeditionId);
     console.log('[SEED] Demo expedition INPEX-2027 initialized successfully with baseline risk: 38.');

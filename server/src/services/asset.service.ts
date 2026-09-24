@@ -4,22 +4,29 @@ import { AlertService } from './alert.service.js';
 import { AuditService } from './audit.service.js';
 
 export class AssetService {
-  public static async listAssets(expeditionId: string, type?: string, stationId?: string) {
-    const where: any = { expeditionId };
+  public static async listAssets(expeditionId?: string, type?: string, stationId?: string, organizationId?: string) {
+    const where: any = {};
+    if (expeditionId) where.expeditionId = expeditionId;
+    if (organizationId) where.organizationId = organizationId;
     if (type && type !== 'All') where.type = type;
     if (stationId && stationId !== 'All') where.stationId = stationId;
 
     const assets = await prisma.asset.findMany({
       where,
-      include: { station: true },
+      include: {
+        station: true,
+        tasks: { where: { status: { in: ['ASSIGNED', 'IN_PROGRESS'] } } },
+      },
       orderBy: { name: 'asc' },
     });
 
     return assets.map((a) => {
       const remainingHours = a.maintenanceInterval - a.operatingHours;
       const maintenanceStatus =
-        a.status === 'Unavailable' || a.status === 'Critical'
+        a.lifecycleStatus === 'FAILED' || a.status === 'Unavailable' || a.status === 'Critical'
           ? 'Unavailable'
+          : a.lifecycleStatus === 'UNDER_MAINTENANCE'
+          ? 'Under Maintenance'
           : remainingHours <= 0
           ? 'Maintenance Due'
           : remainingHours <= 200
@@ -38,6 +45,7 @@ export class AssetService {
     const asset = await prisma.asset.create({
       data: {
         expeditionId,
+        organizationId: data.organizationId || null,
         assetCode: data.assetCode || `AST-${Date.now().toString().slice(-4)}`,
         name: data.name,
         type: data.type || 'Snow Vehicle',
@@ -46,9 +54,11 @@ export class AssetService {
         operatingHours: Number(data.operatingHours) || 0,
         maintenanceInterval: Number(data.maintenanceInterval) || 2000,
         lastMaintenanceDate: data.lastMaintenanceDate ? new Date(data.lastMaintenanceDate) : new Date(),
+        nextMaintenanceDate: data.nextMaintenanceDate ? new Date(data.nextMaintenanceDate) : null,
         healthPercentage: Number(data.healthPercentage) || 100,
         failureRisk: data.failureRisk || 'Low',
         status: data.status || 'Operational',
+        lifecycleStatus: data.lifecycleStatus || 'AVAILABLE',
         diagnosticNotes: data.diagnosticNotes || null,
       },
       include: { station: true },
@@ -97,8 +107,8 @@ export class AssetService {
       action: 'UPDATE_ASSET',
       entity: 'Asset',
       entityId: id,
-      previousState: prev.status,
-      newState: updated.status,
+      previousState: prev.lifecycleStatus,
+      newState: updated.lifecycleStatus,
       reason: `Updated asset condition and parameters for ${updated.name}`,
     });
 
@@ -138,9 +148,11 @@ export class AssetService {
         healthPercentage: 100,
         lastMaintenanceDate: new Date(),
         status: 'Operational',
+        lifecycleStatus: 'AVAILABLE',
         failureRisk: 'Low',
         currentCondition: 'Good',
       },
+      include: { station: true },
     });
 
     // Resolve any linked maintenance alerts

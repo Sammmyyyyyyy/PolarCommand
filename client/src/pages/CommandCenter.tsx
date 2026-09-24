@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Package,
@@ -12,9 +12,12 @@ import {
   Activity,
   Calendar,
   CheckCircle2,
+  CheckSquare,
+  CloudSnow,
 } from 'lucide-react';
-import { DashboardSummary } from '../types';
+import { DashboardSummary, WeatherConditionReport } from '../types';
 import { PolarMap } from '../components/map/PolarMap';
+import { fetchStationWeather } from '../services/api';
 
 interface CommandCenterProps {
   summary: DashboardSummary | null;
@@ -29,6 +32,16 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   onSelectStation,
   onSelectCargo,
 }) => {
+  const [liveWeather, setLiveWeather] = useState<WeatherConditionReport | null>(null);
+
+  useEffect(() => {
+    if (summary?.expedition?.id && summary.stationsSummary && summary.stationsSummary.length > 0) {
+      const stationId = summary.stationsSummary[0].id;
+      fetchStationWeather(summary.expedition.id, stationId)
+        .then((w) => setLiveWeather(w))
+        .catch((e) => console.warn('Failed to load initial live weather:', e));
+    }
+  }, [summary?.expedition?.id]);
   if (!summary) {
     return (
       <div className="flex items-center justify-center h-96 text-slate-400">
@@ -96,8 +109,12 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             <Users className="w-4 h-4 text-sky-600 group-hover:scale-110 transition" />
           </div>
           <div className="text-2xl font-black text-slate-900 mt-1">{kpi.personnel}</div>
-          <div className="text-[11px] text-emerald-600 font-medium flex items-center space-x-1 mt-0.5">
-            <span>{(kpi.personnelInTransit ?? 0) > 0 ? `${kpi.personnelInTransit} In Transit` : 'All On-Ice'}</span>
+          <div className="text-[11px] font-medium flex items-center space-x-1 mt-0.5">
+            {(kpi.overdueCheckIns ?? 0) > 0 ? (
+              <span className="text-rose-600 font-bold">{kpi.overdueCheckIns} Overdue Check-in</span>
+            ) : (
+              <span className="text-emerald-600">{(kpi.personnelInTransit ?? 0) > 0 ? `${kpi.personnelInTransit} In Transit` : 'All On-Ice'}</span>
+            )}
           </div>
         </div>
 
@@ -207,6 +224,164 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           <div className="text-[11px] text-slate-500 font-medium mt-0.5">
             {kpi.riskLevel || (isHighRisk ? 'SURGE STATE' : 'Normal Operating')}
           </div>
+        </div>
+      </div>
+
+      {/* Real-World Operational Overview: Accountability, Tasks & Weather */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        {/* Panel 1: Personnel Accountability */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Users className="w-4 h-4 text-sky-600" />
+              <span className="text-xs font-extrabold text-slate-900">Personnel Accountability</span>
+            </div>
+            {(kpi.overdueCheckIns ?? 0) > 0 ? (
+              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold rounded-full animate-pulse">
+                {kpi.overdueCheckIns} Overdue
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
+                100% Accounted
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Total Crew</div>
+              <div className="text-base font-black text-slate-900">{kpi.personnel}</div>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">At Station</div>
+              <div className="text-base font-black text-slate-900">{kpi.personnel - (kpi.personnelInTransit ?? 0)}</div>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Traverse</div>
+              <div className="text-base font-black text-sky-700">{kpi.personnelInTransit ?? 0}</div>
+            </div>
+          </div>
+          <div className="flex justify-between items-center pt-1 text-[11px]">
+            <span className="text-slate-500">Check-in Interval: <strong>12 Hours</strong></span>
+            <button
+              onClick={() => onNavigate('/field')}
+              className="text-sky-700 hover:text-sky-900 font-bold flex items-center space-x-1"
+            >
+              <span>Field Desk</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Panel 2: Operational Mission Tasks */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <CheckSquare className="w-4 h-4 text-sky-600" />
+              <span className="text-xs font-extrabold text-slate-900">Operational Mission Tasks</span>
+            </div>
+            {(kpi.tasks?.blocked ?? 0) > 0 ? (
+              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold rounded-full">
+                {kpi.tasks?.blocked} Blocked
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 bg-sky-100 text-sky-800 text-[10px] font-bold rounded-full">
+                {kpi.tasks?.active ?? 0} In Progress
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-1 text-center text-xs">
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Pending</div>
+              <div className="text-sm font-black text-slate-700">{kpi.tasks?.pending ?? 0}</div>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Active</div>
+              <div className="text-sm font-black text-sky-700">{kpi.tasks?.active ?? 0}</div>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Blocked</div>
+              <div className={`text-sm font-black ${(kpi.tasks?.blocked ?? 0) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                {kpi.tasks?.blocked ?? 0}
+              </div>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase">Done</div>
+              <div className="text-sm font-black text-emerald-600">{kpi.tasks?.completed ?? 0}</div>
+            </div>
+          </div>
+          <div className="flex justify-between items-center pt-1 text-[11px]">
+            <span className="text-slate-500">Total Missions: <strong>{kpi.tasks?.total ?? 0}</strong></span>
+            <button
+              onClick={() => onNavigate('/field')}
+              className="text-sky-700 hover:text-sky-900 font-bold flex items-center space-x-1"
+            >
+              <span>Manage Tasks</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Panel 3: Live Real Weather Telemetry (Open-Meteo) */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <CloudSnow className="w-4 h-4 text-cyan-600" />
+              <span className="text-xs font-extrabold text-slate-900">Polar Weather Telemetry</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`px-1.5 py-0.5 text-[9px] font-bold rounded uppercase ${
+                  liveWeather?.status === 'LIVE'
+                    ? 'bg-cyan-100 text-cyan-800 border border-cyan-300'
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}
+              >
+                {liveWeather?.status === 'LIVE' ? 'LIVE WEATHER' : 'LAST KNOWN DATA'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Provider: {liveWeather?.provider || 'Open-Meteo'}
+              </span>
+            </div>
+          </div>
+          {liveWeather ? (
+            <div className="space-y-1.5 text-xs">
+              <div className="p-2 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900">{liveWeather.stationName}</span>
+                  <div className="text-[10px] text-slate-500">
+                    Wind: {liveWeather.windSpeedKnots} kn (Gusts {liveWeather.windGustKnots} kn) • Vis: {liveWeather.visibility}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    Updated: {new Date(liveWeather.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} UTC
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-black text-cyan-700">
+                    {liveWeather.temperature > 0 ? `+${liveWeather.temperature}` : liveWeather.temperature}°C
+                  </span>
+                  <div
+                    className={`text-[10px] font-extrabold uppercase ${
+                      liveWeather.travelFeasibility === 'OPEN'
+                        ? 'text-emerald-600'
+                        : liveWeather.travelFeasibility === 'CAUTION'
+                        ? 'text-amber-600'
+                        : liveWeather.travelFeasibility === 'RESTRICTED'
+                        ? 'text-orange-600'
+                        : 'text-rose-600'
+                    }`}
+                  >
+                    {liveWeather.travelFeasibility}
+                  </div>
+                  <div className="text-[9px] text-slate-400">Chill: {liveWeather.windChillCelsius}°C</div>
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500 italic bg-cyan-50/50 p-1.5 rounded border border-cyan-100/60 truncate">
+                {liveWeather.advisoryNote}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 text-center text-slate-400 text-xs">Acquiring Open-Meteo station telemetry...</div>
+          )}
         </div>
       </div>
 

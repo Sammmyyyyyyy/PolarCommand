@@ -13,8 +13,13 @@ import { ActionService } from '../services/action.service.js';
 import { SimulationService } from '../services/simulation.service.js';
 import { RiskService } from '../services/risk.service.js';
 import { AuditService } from '../services/audit.service.js';
+import { TaskService } from '../services/task.service.js';
+import { CheckInService } from '../services/checkin.service.js';
+import { WeatherService } from '../services/weather.service.js';
+import { ObservationService } from '../services/observation.service.js';
+import { DocumentService } from '../services/document.service.js';
 import { seedDemoData } from '../seed/demo-data.js';
-import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { AuthenticatedRequest, requireRole } from '../middleware/auth.middleware.js';
 
 export const expeditionRouter = Router();
 
@@ -319,7 +324,13 @@ expeditionRouter.post('/:id/movements', async (req: AuthenticatedRequest, res: R
 
 expeditionRouter.patch('/:id/movements/:movId/status', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const updated = await MovementService.updateMovementStatus(p(req.params.movId), req.body.status, req.user);
+    const { status, delayHours, notes, actualArrival, weatherConstraint } = req.body;
+    const updated = await MovementService.updateMovementStatus(
+      p(req.params.movId),
+      status,
+      { delayHours, notes, actualArrival, weatherConstraint },
+      req.user
+    );
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -386,6 +397,9 @@ expeditionRouter.get('/:id/recommendations', async (req: Request, res: Response)
 
 // Action Execution
 expeditionRouter.post('/:id/actions/execute', async (req: AuthenticatedRequest, res: Response) => {
+  if (req.user && (req.user.role === 'FIELD_MEMBER' || req.user.role === 'VIEWER')) {
+    return res.status(403).json({ error: 'Forbidden: Field members and viewers are not authorized to execute command mitigations.' });
+  }
   try {
     const result = await ActionService.executeAction({
       ...req.body,
@@ -421,6 +435,9 @@ expeditionRouter.post('/:id/simulations/run', async (req: Request, res: Response
 });
 
 expeditionRouter.post('/:id/simulations/:simId/apply', async (req: AuthenticatedRequest, res: Response) => {
+  if (req.user && (req.user.role === 'FIELD_MEMBER' || req.user.role === 'VIEWER')) {
+    return res.status(403).json({ error: 'Forbidden: Field members and viewers cannot commit simulation changes to live operational state.' });
+  }
   try {
     const result = await SimulationService.applyScenario(p(req.params.simId), req.user);
     res.json(result);
@@ -457,3 +474,258 @@ expeditionRouter.get('/:id/audit-logs', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// -------------------------------------------------------------
+// EXPEDITION LIFECYCLE & PUBLISH
+// -------------------------------------------------------------
+expeditionRouter.post('/:id/publish', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await ExpeditionService.publishExpedition(p(req.params.id), req.user);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.patch('/:id/lifecycle', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await ExpeditionService.updateLifecycle(p(req.params.id), req.body.lifecycleStatus, req.user);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// TASKS & MISSION OPERATIONS
+// -------------------------------------------------------------
+expeditionRouter.get('/:id/tasks', async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status as string;
+    const priority = req.query.priority as string;
+    const personnelId = req.query.personnelId as string;
+    const stationId = req.query.stationId as string;
+    const tasks = await TaskService.listTasks(p(req.params.id), { status, priority, personnelId, stationId });
+    res.json(tasks);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.get('/:id/tasks/:taskId', async (req: Request, res: Response) => {
+  try {
+    const task = await TaskService.getTask(p(req.params.taskId));
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    res.json(task);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/tasks', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const task = await TaskService.createTask(p(req.params.id), req.body, req.user);
+    res.status(201).json(task);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.put('/:id/tasks/:taskId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const task = await TaskService.updateTask(p(req.params.taskId), req.body, req.user);
+    res.json(task);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.patch('/:id/tasks/:taskId/status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { status, notes, fieldObservations } = req.body;
+    const task = await TaskService.updateTaskStatus(p(req.params.taskId), status, { notes, fieldObservations }, req.user);
+    res.json(task);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// CHECK-IN & PERSONNEL ACCOUNTABILITY
+// -------------------------------------------------------------
+expeditionRouter.post('/:id/personnel/:personId/check-in', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await CheckInService.recordCheckIn(p(req.params.id), p(req.params.personId), req.body, req.user);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.get('/:id/personnel-accountability', async (req: Request, res: Response) => {
+  try {
+    const result = await CheckInService.getPersonnelAccountability(p(req.params.id));
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// CARGO RECEIVING AT STATION
+// -------------------------------------------------------------
+expeditionRouter.post('/:id/cargo/:cargoId/receive', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await CargoService.receiveCargo(p(req.params.cargoId), req.body, req.user);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// EMERGENCY / SOS BEACON & INCIDENT RESOLUTION
+// -------------------------------------------------------------
+expeditionRouter.post('/:id/emergency/sos', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const incident = await IncidentService.triggerSos(p(req.params.id), req.body, req.user);
+    res.status(201).json(incident);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/incidents/:incId/resolve', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const incident = await IncidentService.resolveIncident(p(req.params.incId), req.body, req.user);
+    res.json(incident);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// OPERATIONAL READINESS & LIFECYCLE
+// -------------------------------------------------------------
+expeditionRouter.get('/:id/readiness', async (req: Request, res: Response) => {
+  try {
+    const readiness = await ExpeditionService.evaluateReadiness(p(req.params.id));
+    res.json(readiness);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.get('/:id/resource-availability', async (req: Request, res: Response) => {
+  try {
+    const orgId = req.query.orgId as string | undefined;
+    const availability = await ExpeditionService.checkResourceAvailability(orgId);
+    res.json(availability);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/publish', async (req: AuthenticatedRequest, res: Response) => {
+  if (req.user && (req.user.role === 'FIELD_MEMBER' || req.user.role === 'VIEWER')) {
+    return res.status(403).json({ error: 'Forbidden: Field members and viewers are not authorized to publish expeditions.' });
+  }
+  try {
+    const published = await ExpeditionService.publishExpedition(p(req.params.id), req.user);
+    res.json(published);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/lifecycle', async (req: AuthenticatedRequest, res: Response) => {
+  if (req.user && (req.user.role === 'FIELD_MEMBER' || req.user.role === 'VIEWER')) {
+    return res.status(403).json({ error: 'Forbidden: Field members and viewers cannot change lifecycle state.' });
+  }
+  try {
+    const updated = await ExpeditionService.updateLifecycle(p(req.params.id), req.body.lifecycleStatus, req.user);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// WEATHER TELEMETRY & CONSTRAINTS
+// -------------------------------------------------------------
+expeditionRouter.get('/:id/stations/:stationId/weather', async (req: Request, res: Response) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true';
+    const weather = await WeatherService.getStationWeather(p(req.params.stationId), forceRefresh);
+    res.json(weather);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/movements/:movId/weather-constraint', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const stationId = req.body.stationId;
+    if (!stationId) return res.status(400).json({ error: 'stationId is required' });
+    const weather = await WeatherService.getStationWeather(stationId);
+    const updated = await MovementService.applyWeatherConstraint(p(req.params.movId), weather, req.user);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// FIELD OBSERVATIONS
+// -------------------------------------------------------------
+expeditionRouter.get('/:id/observations', async (req: Request, res: Response) => {
+  try {
+    const category = req.query.category as string;
+    const severity = req.query.severity as string;
+    const list = await ObservationService.listObservations(p(req.params.id), category, severity);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/observations', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const obs = await ObservationService.createObservation({
+      ...req.body,
+      expeditionId: p(req.params.id),
+      user: req.user,
+    });
+    res.status(201).json(obs);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// OPERATIONAL DOCUMENTS & ATTACHMENTS
+// -------------------------------------------------------------
+expeditionRouter.get('/:id/documents', async (req: Request, res: Response) => {
+  try {
+    const entityType = req.query.entityType as string;
+    const entityId = req.query.entityId as string;
+    const docs = await DocumentService.listDocuments(p(req.params.id), entityType, entityId);
+    res.json(docs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+expeditionRouter.post('/:id/documents', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const doc = await DocumentService.attachDocument({
+      ...req.body,
+      expeditionId: p(req.params.id),
+      user: req.user,
+    });
+    res.status(201).json(doc);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+

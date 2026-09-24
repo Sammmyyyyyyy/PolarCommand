@@ -99,7 +99,7 @@ export const ResourceOptimization: React.FC = () => {
               </div>
               <div className="text-xs text-slate-500">
                 Payload capacity: {allocationPlan.capacityKg.toLocaleString()} kg • Assigned:{' '}
-                {allocationPlan.assignedWeightKg.toLocaleString()} kg ({allocationPlan.utilizationPercentage}%)
+                {(allocationPlan.assignedWeightKg ?? allocationPlan.totalAllocatedWeightKg ?? 0).toLocaleString()} kg ({allocationPlan.utilizationPercentage}%)
               </div>
             </div>
 
@@ -135,7 +135,7 @@ export const ResourceOptimization: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allocationPlan.assignedShipments.map((c) => (
+                {allocationPlan.assignedShipments.map((c: any) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="py-2.5 px-3 font-mono font-bold text-sky-700">{c.id}</td>
                     <td className="py-2.5 px-3 font-medium text-slate-700">{c.category}</td>

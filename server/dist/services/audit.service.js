@@ -34,4 +34,7 @@ export class AuditService {
             },
         });
     }
+    static async listAuditLogs(expeditionId, limit = 50) {
+        return this.getRecentActivity(expeditionId, limit);
+    }
 }

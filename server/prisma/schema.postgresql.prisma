@@ -1,96 +1,152 @@
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("POSTGRES_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
 }
 
+model Organization {
+  id          String       @id @default(uuid())
+  code        String       @unique // e.g. PRO-GLOBAL
+  name        String       // e.g. Polar Research Operations
+  description String?
+  users       User[]
+  expeditions Expedition[]
+  stations    Station[]
+  assets      Asset[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
 model User {
-  id                   String       @id @default(uuid())
-  email                String       @unique
-  passwordHash         String
-  name                 String
-  role                 String       // ADMIN, COMMANDER, LOGISTICS_OFFICER, STATION_MANAGER, VIEWER
-  stationId            String?
+  id                  String        @id @default(uuid())
+  email               String        @unique
+  passwordHash        String
+  name                String
+  role                String        // ADMIN, COMMANDER, LOGISTICS_OFFICER, STATION_MANAGER, FIELD_MEMBER, VIEWER
+  stationId           String?
+  organizationId      String?
+  organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  assignedPersonnelId String?       @unique
+  assignedPersonnel   Personnel?    @relation("UserPersonnelLink", fields: [assignedPersonnelId], references: [id], onDelete: SetNull)
   commandedExpeditions Expedition[] @relation("ExpeditionCommander")
-  auditLogs            AuditLog[]
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  assignedTasks       Task[]        @relation("TaskAssignee")
+  reportedIncidents   Incident[]    @relation("IncidentReporter")
+  submittedObservations FieldObservation[] @relation("ObservationSubmitter")
+  uploadedDocuments   OperationalDocument[] @relation("DocumentUploader")
+  checkInLogs         CheckInLog[]
+  auditLogs           AuditLog[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([organizationId])
 }
 
 model Expedition {
-  id               String             @id @default(uuid())
-  code             String             @unique
-  title            String
-  type             String
-  missionObjective String
-  commanderId      String?
-  commander        User?              @relation("ExpeditionCommander", fields: [commanderId], references: [id], onDelete: SetNull)
-  commanderName    String?
-  status           String             // PLANNING, ACTIVE, COMPLETED, ARCHIVED
-  startDate        DateTime
-  endDate          DateTime
-  origin           String
-  destination      String
-  intermediateHubs String?
-  transportModes   String?
-  priority         String             // CRITICAL, HIGH, MEDIUM, LOW
-  notes            String?
-  overallRiskScore Float              @default(0)
-  stations         Station[]
-  personnel        Personnel[]
-  cargo            Cargo[]
-  inventory        InventoryItem[]
-  assets           Asset[]
-  movements        Movement[]
-  incidents        Incident[]
-  alerts           Alert[]
-  actions          ActionItem[]
-  simulations      SimulationRecord[]
-  riskSnapshots    RiskSnapshot[]
-  auditLogs        AuditLog[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                 String             @id @default(uuid())
+  code               String             @unique
+  title              String
+  type               String
+  missionObjective   String
+  commanderId        String?
+  commander          User?              @relation("ExpeditionCommander", fields: [commanderId], references: [id], onDelete: SetNull)
+  commanderName      String?
+  status             String             // PLANNING, ACTIVE, COMPLETED, ARCHIVED
+  lifecycleStatus    String             @default("PLANNED") // DRAFT, PLANNED, ACTIVE, PAUSED, COMPLETED, CANCELLED, ARCHIVED
+  startDate          DateTime
+  endDate            DateTime
+  origin             String
+  destination        String
+  intermediateHubs   String?
+  transportModes     String?
+  priority           String             // CRITICAL, HIGH, MEDIUM, LOW
+  notes              String?
+  overallRiskScore   Float              @default(0)
+  organizationId     String?
+  organization       Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  connectivityStatus String             @default("ONLINE") // ONLINE, WEAK, OFFLINE, SYNCING
+  lastSyncTime       DateTime?
+  stations           Station[]
+  personnel          Personnel[]
+  cargo              Cargo[]
+  inventory          InventoryItem[]
+  assets             Asset[]
+  movements          Movement[]
+  tasks              Task[]
+  checkInLogs        CheckInLog[]
+  incidents          Incident[]
+  observations       FieldObservation[]
+  documents          OperationalDocument[]
+  alerts             Alert[]
+  actions            ActionItem[]
+  simulations        SimulationRecord[]
+  riskSnapshots      RiskSnapshot[]
+  auditLogs          AuditLog[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([organizationId])
 }
 
 model Station {
-  id           String            @id @default(uuid())
-  expeditionId String
-  expedition   Expedition        @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
-  name         String
-  code         String
-  region       String
-  latitude     Float
-  longitude    Float
-  status       String            // Operational, Warning, High Risk
-  capacity     Int               @default(30)
-  currentRisk  Float             @default(0)
-  weather      WeatherSnapshot[]
-  personnel    Personnel[]
-  inventory    InventoryItem[]
-  assets       Asset[]
-  incidents    Incident[]
-  actions      ActionItem[]
-  riskSnapshots RiskSnapshot[]
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id                 String            @id @default(uuid())
+  expeditionId       String
+  expedition         Expedition        @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  organizationId     String?
+  organization       Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  name               String
+  code               String
+  region             String
+  latitude           Float
+  longitude          Float
+  status             String            // Operational, Warning, High Risk
+  capacity           Int               @default(30)
+  currentRisk        Float             @default(0)
+  connectivityStatus String            @default("ONLINE")
+  weather            WeatherSnapshot[]
+  personnel          Personnel[]
+  inventory          InventoryItem[]
+  assets             Asset[]
+  tasks              Task[]
+  incidents          Incident[]
+  observations       FieldObservation[]
+  actions            ActionItem[]
+  riskSnapshots      RiskSnapshot[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([expeditionId])
+  @@index([organizationId])
 }
 
 model WeatherSnapshot {
-  id               String   @id @default(uuid())
-  stationId        String
-  station          Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  temperature      Float
-  windSpeedKnots   Float
-  condition        String
-  visibility       String
-  recordedAt       DateTime @default(now())
+  id                  String    @id @default(uuid())
+  stationId           String
+  station             Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  temperature         Float
+  apparentTemperature Float?
+  windSpeedKnots      Float
+  windDirection       Float?
+  windGustKnots       Float?
+  visibility          String
+  visibilityMeters    Float?
+  precipitationMm     Float?
+  snowfallCm          Float?
+  snowDepthMeters     Float?
+  weatherCode         Int?
+  cloudCoverPercent   Float?
+  condition           String
+  provider            String    @default("Open-Meteo")
+  isStale             Boolean   @default(false)
+  fetchedAt           DateTime  @default(now())
+  forecastTime        DateTime?
+  rawJson             String?
+  recordedAt          DateTime  @default(now())
 
   @@index([stationId])
+  @@index([fetchedAt])
 }
 
 model Personnel {
@@ -108,8 +164,16 @@ model Personnel {
   contactInfo           String
   movementSchedule      String?
   status                String              // At Station, In Transit, Field Mission, Standby
+  checkInStatus         String              @default("ACTIVE") // ACTIVE, RESTING, IN_TRANSIT, ON_TASK, MEDICAL, MISSING, EMERGENCY
+  lastCheckIn           DateTime?
+  expectedNextCheckIn   DateTime?
+  isCheckInOverdue      Boolean             @default(false)
+  checkInNotes          String?
   latitude              Float?
   longitude             Float?
+  assignedUserLink      User?               @relation("UserPersonnelLink")
+  assignedTasks         Task[]
+  checkInLogs           CheckInLog[]
   assignedIncidents     Incident[]
   assignedActions       ActionItem[]
   movements             MovementPersonnel[]
@@ -118,6 +182,26 @@ model Personnel {
 
   @@index([expeditionId])
   @@index([assignedStationId])
+}
+
+model CheckInLog {
+  id           String     @id @default(uuid())
+  personnelId  String
+  personnel    Personnel  @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  expeditionId String
+  expedition   Expedition @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status       String     // ACTIVE, RESTING, IN_TRANSIT, ON_TASK, MEDICAL, MISSING, EMERGENCY
+  stationName  String?
+  location     String?
+  latitude     Float?
+  longitude    Float?
+  notes        String?
+  timestamp    DateTime   @default(now())
+
+  @@index([expeditionId, timestamp])
+  @@index([personnelId])
 }
 
 model Cargo {
@@ -139,8 +223,13 @@ model Cargo {
   originalEta         DateTime?
   delayHours          Float           @default(0)
   specialRequirements String?
-  status              String          // Created, Scheduled, In Transit, Delayed, At Intermediate Location, Arrived, Cancelled
+  status              String          // PLANNED, PACKED, LOADED, IN_TRANSIT, AT_HUB, AT_STATION, DELIVERED, DELAYED, DAMAGED, LOST, CANCELLED
   vesselName          String?
+  receivedAt          DateTime?
+  receivedBy          String?
+  receivedQuantity    Float?
+  receivingNotes      String?
+  conditionOnArrival  String?         // Intact, Minor Damage, Compromised, Leakage
   riskScore           Float           @default(0)
   riskLevel           String          @default("LOW")
   journeyJson         String?
@@ -182,6 +271,8 @@ model Asset {
   id                  String       @id @default(uuid())
   expeditionId        String
   expedition          Expedition   @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  organizationId      String?
+  organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   assetCode           String       // e.g. PB-07
   name                String
   type                String       // Snow Vehicle, Generator, Crane, Scientific Equipment, Utility Machinery
@@ -191,10 +282,15 @@ model Asset {
   operatingHours      Float        @default(0)
   maintenanceInterval Float        @default(2000)
   lastMaintenanceDate DateTime     @default(now())
+  nextMaintenanceDate DateTime?
   healthPercentage    Float        @default(100)
   failureRisk         String       @default("Low") // Low, Medium, High
   status              String       @default("Operational") // Operational, Maintenance, Critical, Standby, Unavailable
+  lifecycleStatus     String       @default("AVAILABLE") // AVAILABLE, ASSIGNED, IN_USE, INSPECTION_DUE, MAINTENANCE_DUE, UNDER_MAINTENANCE, FAILED, RETIRED
   diagnosticNotes     String?
+  tasks               Task[]
+  movements           Movement[]
+  observations        FieldObservation[]
   assignedIncidents   Incident[]
   assignedActions     ActionItem[]
   createdAt           DateTime     @default(now())
@@ -202,28 +298,75 @@ model Asset {
 
   @@index([expeditionId])
   @@index([stationId])
+  @@index([organizationId])
+}
+
+model Task {
+  id                  String     @id @default(uuid())
+  expeditionId        String
+  expedition          Expedition @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  title               String
+  description         String
+  stationId           String?
+  station             Station?   @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  location            String?
+  assignedPersonnelId String?
+  assignedPersonnel   Personnel? @relation(fields: [assignedPersonnelId], references: [id], onDelete: SetNull)
+  assignedUserId      String?
+  assignedUser        User?      @relation("TaskAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  priority            String     @default("MEDIUM") // CRITICAL, HIGH, MEDIUM, LOW
+  status              String     @default("PENDING") // PENDING, ASSIGNED, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED
+  startTime           DateTime?
+  dueTime             DateTime?
+  completionTime      DateTime?
+  dependencies        String?    // JSON array of prerequisite descriptions or IDs
+  requiredAssetId     String?
+  requiredAsset       Asset?     @relation(fields: [requiredAssetId], references: [id], onDelete: SetNull)
+  requiredCargo       String?    // Required cargo or resource specifications
+  notes               String?
+  fieldObservations   String?    // Observations submitted upon completion
+  observations        FieldObservation[]
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@index([expeditionId])
+  @@index([assignedPersonnelId])
+  @@index([status])
 }
 
 model Movement {
-  id             String              @id @default(uuid())
-  expeditionId   String
-  expedition     Expedition          @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
-  fromLocation   String
-  toLocation     String
-  departureTime  DateTime
-  eta            DateTime
-  actualArrival  DateTime?
-  transportMode  String              // Vessel, Air, Snow Vehicle, Foot
-  status         String              // Scheduled, Departed, In Transit, Arrived, Delayed, Cancelled
-  currentLat     Float?
-  currentLng     Float?
-  notes          String?
-  personnelRoster MovementPersonnel[]
-  cargoManifest  MovementCargo[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id                String              @id @default(uuid())
+  movementCode      String              @default("MVT-001")
+  expeditionId      String
+  expedition        Expedition          @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  fromLocation      String
+  toLocation        String
+  route             String?
+  departureTime     DateTime
+  eta               DateTime
+  plannedDeparture  DateTime?
+  plannedEta        DateTime?
+  actualDeparture   DateTime?
+  actualArrival     DateTime?
+  transportMode     String              // Vessel, Air, Snow Vehicle, Foot, Hagglunds, Skidoo
+  status            String              @default("PLANNED") // PLANNED, READY, IN_TRANSIT, DELAYED, ARRIVED, CANCELLED
+  currentLat        Float?
+  currentLng        Float?
+  currentLocation   String?
+  assignedAssetId   String?
+  assignedAsset     Asset?              @relation(fields: [assignedAssetId], references: [id], onDelete: SetNull)
+  delayHours        Float               @default(0)
+  weatherConstraint String?
+  riskScore         Float               @default(0)
+  riskLevel         String              @default("LOW")
+  notes             String?
+  personnelRoster   MovementPersonnel[]
+  cargoManifest     MovementCargo[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([expeditionId])
+  @@index([status])
 }
 
 model MovementPersonnel {
@@ -251,7 +394,7 @@ model Incident {
   expeditionId        String
   expedition          Expedition @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
   incidentCode        String     // e.g. INC-012
-  type                String     // Vehicle Breakdown, Medical Emergency, Missing Personnel, Cargo Damage, Communication Failure, Fire / Safety, Other
+  type                String     // Vehicle Breakdown, Medical Emergency, Missing Personnel, Cargo Damage, Communication Failure, Fire / Safety, SOS Beacon, Other
   title               String
   location            String
   latitude            Float?
@@ -261,13 +404,21 @@ model Incident {
   description         String
   requiredSupport     String?
   status              String     @default("In Progress") // New, In Progress, Dispatched, Resolved
+  isSosEmergency      Boolean    @default(false)
+  reporterUserId      String?
+  reporterUser        User?      @relation("IncidentReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reporterName        String?
   targetStationId     String?
   targetStation       Station?   @relation(fields: [targetStationId], references: [id], onDelete: SetNull)
   assignedPersonnelId String?
   assignedPersonnel   Personnel? @relation(fields: [assignedPersonnelId], references: [id], onDelete: SetNull)
   assignedAssetId     String?
   assignedAsset       Asset?     @relation(fields: [assignedAssetId], references: [id], onDelete: SetNull)
+  responseEtaMinutes  Int?
   responsePlanJson    String?
+  resolutionNotes     String?
+  resolvedAt          DateTime?
+  observations        FieldObservation[]
   timestamp           DateTime   @default(now())
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
@@ -288,6 +439,7 @@ model Alert {
   recommendedAction String
   status            String       @default("ACTIVE") // ACTIVE, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, DISMISSED
   actions           ActionItem[]
+  observations      FieldObservation[]
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -345,6 +497,8 @@ model RiskSnapshot {
   personnelRisk       Float
   incidentRisk        Float
   weatherRisk         Float
+  taskRisk            Float      @default(0)
+  checkInRisk         Float      @default(0)
   contributingFactors String?
   recordedAt          DateTime   @default(now())
 
@@ -352,20 +506,74 @@ model RiskSnapshot {
 }
 
 model AuditLog {
-  id               String      @id @default(uuid())
-  expeditionId     String?
-  expedition       Expedition? @relation(fields: [expeditionId], references: [id], onDelete: SetNull)
-  userId           String?
-  user             User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userName         String
-  userRole         String
-  action           String
-  entity           String
-  entityId         String
+  id                String      @id @default(uuid())
+  expeditionId      String?
+  expedition        Expedition? @relation(fields: [expeditionId], references: [id], onDelete: SetNull)
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName          String
+  userRole          String
+  action            String
+  entity            String
+  entityId          String
   previousStateJson String?
-  newStateJson     String?
-  reason           String?
-  timestamp        DateTime    @default(now())
+  newStateJson      String?
+  reason            String?
+  timestamp         DateTime    @default(now())
 
   @@index([expeditionId, timestamp])
 }
+
+model FieldObservation {
+  id               String                @id @default(uuid())
+  expeditionId     String
+  expedition       Expedition            @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  stationId        String?
+  station          Station?              @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  location         String?
+  submittedById    String?
+  submittedBy      User?                 @relation("ObservationSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  submitterName    String
+  category         String                // ENVIRONMENT, EQUIPMENT, SAFETY, CARGO, INFRASTRUCTURE, PERSONNEL, ROUTE, OTHER
+  description      String
+  severity         String                @default("LOW") // LOW, MEDIUM, HIGH, CRITICAL
+  relatedTaskId    String?
+  relatedTask      Task?                 @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  relatedAssetId   String?
+  relatedAsset     Asset?                @relation(fields: [relatedAssetId], references: [id], onDelete: SetNull)
+  linkedIncidentId String?
+  linkedIncident   Incident?             @relation(fields: [linkedIncidentId], references: [id], onDelete: SetNull)
+  linkedAlertId    String?
+  linkedAlert      Alert?                @relation(fields: [linkedAlertId], references: [id], onDelete: SetNull)
+  attachments      OperationalDocument[]
+  timestamp        DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([expeditionId])
+  @@index([category])
+  @@index([severity])
+}
+
+model OperationalDocument {
+  id              String            @id @default(uuid())
+  expeditionId    String
+  expedition      Expedition        @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  entityType      String            // EXPEDITION, TASK, INCIDENT, CARGO, ASSET, STATION, FIELD_OBSERVATION, MOVEMENT
+  entityId        String
+  fileName        String
+  fileType        String            // PDF, MANIFEST, REPORT, LOG, IMAGE, CSV
+  fileSize        Int               @default(0)
+  fileUrl         String?
+  uploadedById    String?
+  uploadedBy      User?             @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedByName  String
+  observationId   String?
+  observation     FieldObservation? @relation(fields: [observationId], references: [id], onDelete: SetNull)
+  timestamp       DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+
+  @@index([expeditionId])
+  @@index([entityType, entityId])
+}
+

@@ -14,7 +14,8 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { CargoShipment, CargoDelaySimulationResponse } from '../types';
-import { simulateCargoDelay } from '../services/api';
+import { simulateCargoDelay, receiveCargo } from '../services/api';
+import { useExpedition } from '../context/ExpeditionContext';
 
 interface CargoDetailProps {
   cargo: CargoShipment;
@@ -29,10 +30,40 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
   onRefreshData,
   onNavigate,
 }) => {
+  const { currentExpeditionId, triggerRefresh } = useExpedition();
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'impact' | 'inventory'>('overview');
   const [selectedDelay, setSelectedDelay] = useState<number>(48);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationResult, setSimulationResult] = useState<CargoDelaySimulationResponse | null>(null);
+
+  // Receiving state
+  const [isReceivingOpen, setIsReceivingOpen] = useState(false);
+  const [receivedQty, setReceivedQty] = useState<number>(cargo.quantity || 100);
+  const [condition, setCondition] = useState<string>('Optimal');
+  const [receivingNotes, setReceivingNotes] = useState<string>('Unloaded and verified at station intake depot.');
+  const [isSubmittingReceipt, setIsSubmittingReceipt] = useState(false);
+  const [receiptSuccessMsg, setReceiptSuccessMsg] = useState<string | null>(null);
+
+  const handleReceiveCargo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsSubmittingReceipt(true);
+      const expId = cargo.expeditionId || currentExpeditionId || '';
+      await receiveCargo(expId, cargo.id, {
+        receivedQuantity: Number(receivedQty),
+        conditionOnArrival: condition,
+        receivingNotes,
+      });
+      setReceiptSuccessMsg(`Cargo successfully received. Station inventory incremented by +${receivedQty} units.`);
+      setIsReceivingOpen(false);
+      triggerRefresh();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to record cargo receipt');
+    } finally {
+      setIsSubmittingReceipt(false);
+    }
+  };
 
   const handleRunSimulation = async (delayHours: number) => {
     try {
@@ -94,38 +125,66 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
           </div>
         </div>
 
-        {/* Quick Simulator Trigger */}
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 text-xs font-semibold">
-            {[24, 48, 72, 168].map((hours) => (
-              <button
-                key={hours}
-                onClick={() => {
-                  setSelectedDelay(hours);
-                  handleRunSimulation(hours);
-                }}
-                disabled={isSimulating}
-                className={`px-2.5 py-1 rounded-md transition ${
-                  selectedDelay === hours
-                    ? 'bg-sky-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                +{hours === 72 ? '3d' : hours === 168 ? '7d' : `${hours}h`}
-              </button>
-            ))}
-          </div>
+        {/* Actions Strip */}
+        <div className="flex flex-wrap items-center gap-2">
+          {cargo.status === 'DELIVERED' || (cargo as any).receivedAt ? (
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Delivered & Intake Complete</span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsReceivingOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-extrabold shadow-xs transition"
+              title="Station Intake: Mark cargo received and update station inventory"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Receive Cargo at Station</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleRunSimulation(selectedDelay)}
-            disabled={isSimulating}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition disabled:opacity-50"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Simulate Delay</span>
-          </button>
+          {/* Quick Simulator Trigger */}
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5 text-xs font-semibold">
+              {[24, 48, 72, 168].map((hours) => (
+                <button
+                  key={hours}
+                  onClick={() => {
+                    setSelectedDelay(hours);
+                    handleRunSimulation(hours);
+                  }}
+                  disabled={isSimulating}
+                  className={`px-2.5 py-1 rounded-md transition ${
+                    selectedDelay === hours
+                      ? 'bg-sky-600 text-white shadow-xs font-bold'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  +{hours === 72 ? '3d' : hours === 168 ? '7d' : `${hours}h`}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => handleRunSimulation(selectedDelay)}
+              disabled={isSimulating}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition disabled:opacity-50"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Simulate Delay</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {receiptSuccessMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 font-bold flex items-center justify-between animate-fadeIn">
+          <span>{receiptSuccessMsg}</span>
+          <button onClick={() => setReceiptSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Sub Tabs */}
       <div className="flex items-center space-x-1 border-b border-slate-200 text-xs font-semibold">
@@ -346,6 +405,102 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
           )}
         </div>
       </div>
+
+      {/* Station Intake Modal */}
+      {isReceivingOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Station Intake: Receive Cargo</h3>
+                  <p className="text-[11px] text-slate-500">Record arrival verification & increment station inventory</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReceivingOpen(false)}
+                className="text-slate-400 hover:text-slate-700 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleReceiveCargo} className="space-y-4 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cargo Item</div>
+                <div className="font-bold text-slate-900">{cargo.id} — {cargo.description}</div>
+                <div className="text-[11px] text-slate-600 flex justify-between pt-1">
+                  <span>Destination: <strong>{cargo.destination}</strong></span>
+                  <span>Manifest Expected: <strong>{cargo.quantity} units ({cargo.weightKg} kg)</strong></span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Actual Received Quantity *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={receivedQty}
+                  onChange={(e) => setReceivedQty(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-100 focus:bg-white"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">
+                  Discrepancies against manifest are audited automatically.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Condition on Arrival *
+                </label>
+                <select
+                  value={condition}
+                  onChange={(e) => setCondition(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-100 focus:bg-white"
+                >
+                  <option value="Optimal">Optimal (No seal breach, cold-chain verified)</option>
+                  <option value="Intact">Intact (Standard arrival condition)</option>
+                  <option value="Minor Packaging Wear">Minor Packaging Wear (Contents sound)</option>
+                  <option value="Damaged">Damaged / Partial Loss</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Station Intake Officer Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={receivingNotes}
+                  onChange={(e) => setReceivingNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-100 focus:bg-white"
+                ></textarea>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsReceivingOpen(false)}
+                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReceipt}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold transition shadow-xs disabled:opacity-50"
+                >
+                  {isSubmittingReceipt ? 'Recording Receipt...' : 'Confirm Receipt & Update Inventory'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

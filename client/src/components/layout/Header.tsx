@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   Bell,
@@ -11,13 +11,18 @@ import {
   Plus,
   FolderOpen,
   UserCheck,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Compass,
 } from 'lucide-react';
-import { simulateCargoDelay, executeHeroAction, resetDemoState } from '../../services/api';
+import { simulateCargoDelay, executeHeroAction, resetDemoState, updateTaskStatus, recordCheckIn, createIncident, triggerEmergencySos } from '../../services/api';
 import { useExpedition } from '../../context/ExpeditionContext';
 import { useAuth } from '../../context/AuthContext';
 import { CommandPalette } from '../common/CommandPalette';
 import { NotificationDrawer } from '../common/NotificationDrawer';
 import { UserRole } from '../../types';
+import { OfflineSyncService, OfflineCacheState } from '../../services/offlineSync';
 
 interface HeaderProps {
   onRefreshData?: () => void;
@@ -104,7 +109,47 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const roles: UserRole[] = ['COMMANDER', 'ADMIN', 'LOGISTICS_OFFICER', 'STATION_MANAGER', 'VIEWER'];
+  const [offlineState, setOfflineState] = useState<OfflineCacheState>(OfflineSyncService.getState());
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    return OfflineSyncService.subscribe((s) => setOfflineState(s));
+  }, []);
+
+  const handleToggleOffline = () => {
+    OfflineSyncService.setSimulatedOffline(!offlineState.simulatedOffline);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await OfflineSyncService.drainQueue({
+        updateTaskStatus: async (taskId, status, notes, fieldObservations) => {
+          return updateTaskStatus(currentExpeditionId || '', taskId, status, { notes, fieldObservations });
+        },
+        recordCheckIn: async (expeditionId, personnelId, data) => {
+          return recordCheckIn(expeditionId, personnelId, data);
+        },
+        createIncident: async (expeditionId, data) => {
+          return createIncident(expeditionId, data);
+        },
+        triggerSos: async (expeditionId, data) => {
+          return triggerEmergencySos(expeditionId, data);
+        },
+      });
+      if (res.syncedCount > 0) {
+        setDemoBannerMessage(`Synced ${res.syncedCount} queued operational field mutations to central server.`);
+        triggerRefresh();
+        if (onRefreshData) onRefreshData();
+      }
+    } catch (err: any) {
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const roles: UserRole[] = ['COMMANDER', 'ADMIN', 'LOGISTICS_OFFICER', 'STATION_MANAGER', 'FIELD_MEMBER', 'VIEWER'];
 
   return (
     <>
@@ -237,6 +282,50 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
+            {/* Global Connectivity / Offline State Indicator */}
+            <div className="flex items-center space-x-1.5 border-r border-slate-200 pr-3">
+              <button
+                onClick={handleToggleOffline}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  offlineState.connectivityStatus === 'OFFLINE'
+                    ? 'bg-amber-500/10 text-amber-700 border-amber-300'
+                    : offlineState.connectivityStatus === 'SYNCING'
+                    ? 'bg-sky-50 text-sky-700 border-sky-300'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}
+                title={
+                  offlineState.simulatedOffline
+                    ? 'Simulated Offline Mode Active. Click to reconnect network.'
+                    : 'Connected to polar operational telemetry network. Click to simulate field offline mode.'
+                }
+              >
+                {offlineState.connectivityStatus === 'OFFLINE' ? (
+                  <WifiOff className="w-3.5 h-3.5 text-amber-600" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                )}
+                <span className="font-mono text-[11px] font-bold">
+                  {offlineState.connectivityStatus}
+                </span>
+                {offlineState.queuedMutations.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-amber-600 text-white text-[10px] rounded-full font-bold animate-pulse">
+                    {offlineState.queuedMutations.length} queued
+                  </span>
+                )}
+              </button>
+
+              {offlineState.queuedMutations.length > 0 && offlineState.connectivityStatus !== 'OFFLINE' && (
+                <button
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="p-1.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 hover:bg-sky-100 transition"
+                  title="Drain queue and sync pending field mutations"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+            </div>
+
             {/* Notifications Bell */}
             <button
               onClick={() => setIsNotificationDrawerOpen(true)}
@@ -309,52 +398,74 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Hero Demo Quick Control Ribbon */}
+        {/* Hero Quick Control Ribbon */}
         <div className="bg-slate-900 text-white px-6 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 shadow-inner">
-          <div className="flex items-center space-x-2">
-            <span className="px-1.5 py-0.5 bg-sky-500 text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
-              Decision Support
-            </span>
-            <span className="text-slate-300 font-medium text-[11px] hidden sm:inline">
-              Expedition Operations:
-            </span>
-          </div>
+          {currentRole === 'FIELD_MEMBER' ? (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center space-x-2">
+                <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
+                  Field Member Mode
+                </span>
+                <span className="text-slate-300 font-medium text-[11px]">
+                  Logged in as Field Member. High-level command actions are restricted to Commander/Admin.
+                </span>
+              </div>
+              <button
+                onClick={() => onNavigate && onNavigate('/field')}
+                className="flex items-center space-x-1.5 px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded font-bold text-[11px] transition shadow-xs"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>Go to Field Member Workspace</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center space-x-2">
+                <span className="px-1.5 py-0.5 bg-sky-500 text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
+                  Decision Support
+                </span>
+                <span className="text-slate-300 font-medium text-[11px] hidden sm:inline">
+                  Expedition Operations:
+                </span>
+              </div>
 
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleSimulateDelay}
-              disabled={isProcessing}
-              className="flex items-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
-              title="Simulate delay to trigger automated risk cascade and alert generation"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Simulate Delay</span>
-            </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleSimulateDelay}
+                  disabled={isProcessing}
+                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
+                  title="Simulate delay to trigger automated risk cascade and alert generation"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Simulate Delay</span>
+                </button>
 
-            <button
-              onClick={handleExecuteHeroAction}
-              disabled={isProcessing || !canExecuteActions}
-              className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
-              title={
-                canExecuteActions
-                  ? 'Execute AI recommended reallocation to mitigate risk'
-                  : 'Commander or Admin role required to execute action'
-              }
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Reallocate Stock (Mitigate Risk)</span>
-            </button>
+                <button
+                  onClick={handleExecuteHeroAction}
+                  disabled={isProcessing || !canExecuteActions}
+                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
+                  title={
+                    canExecuteActions
+                      ? 'Execute recommended reallocation to mitigate risk'
+                      : 'Commander or Admin role required to execute action'
+                  }
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Reallocate Stock (Mitigate Risk)</span>
+                </button>
 
-            <button
-              onClick={handleReset}
-              disabled={isProcessing}
-              className="flex items-center space-x-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[11px] transition"
-              title="Reset state to baseline"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span className="hidden md:inline">Reset</span>
-            </button>
-          </div>
+                <button
+                  onClick={handleReset}
+                  disabled={isProcessing}
+                  className="flex items-center space-x-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[11px] transition"
+                  title="Reset state to baseline"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span className="hidden md:inline">Reset</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Dynamic Status Notification Banner */}

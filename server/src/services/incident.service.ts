@@ -15,6 +15,7 @@ export class IncidentService {
         targetStation: true,
         assignedPersonnel: true,
         assignedAsset: true,
+        reporterUser: { select: { id: true, name: true, role: true, email: true } },
       },
       orderBy: { timestamp: 'desc' },
     });
@@ -27,6 +28,7 @@ export class IncidentService {
         targetStation: true,
         assignedPersonnel: true,
         assignedAsset: true,
+        reporterUser: { select: { id: true, name: true, role: true, email: true } },
       },
     });
   }
@@ -43,7 +45,7 @@ export class IncidentService {
 
     if (!expedition) throw new Error(`Expedition ${expeditionId} not found`);
 
-    // Determine nearest station from location name or default
+    // Determine nearest station from location or default
     const locationLower = (data.location || '').toLowerCase();
     const nearestStation =
       expedition.stations.find((s) => locationLower.includes(s.name.toLowerCase()) || locationLower.includes(s.code.toLowerCase())) ||
@@ -51,7 +53,7 @@ export class IncidentService {
       null;
 
     // Find nearest qualified personnel (Doctor if medical, Engineer if vehicle, or available personnel)
-    const isMedical = data.type === 'Medical Emergency' || data.type === 'Missing Personnel';
+    const isMedical = data.type === 'Medical Emergency' || data.type === 'Missing Personnel' || data.isSosEmergency;
     const qualifiedPersonnel =
       expedition.personnel.find((p) =>
         isMedical
@@ -76,29 +78,35 @@ export class IncidentService {
       etaMinutes: 38,
       recommendedSteps: [
         `Mobilize ${availableVehicle ? availableVehicle.name : 'Emergency Vehicle'} from ${nearestStation?.name || 'Base'}`,
-        `Assign ${qualifiedPersonnel ? qualifiedPersonnel.name : 'Officer'} to on-ice triage response`,
-        'Establish VHF simplex relay and satellite locator tracking',
-        'Prepare emergency survival shelter and medical stabilization kit',
+        `Assign ${qualifiedPersonnel ? qualifiedPersonnel.name : 'Officer'} to on-ice response and triage`,
+        'Establish VHF simplex relay and satellite beacon tracking',
+        'Prepare emergency survival shelter and field stabilization equipment',
       ],
     };
+
+    const isSos = Boolean(data.isSosEmergency);
 
     const incident = await prisma.incident.create({
       data: {
         expeditionId,
         incidentCode,
-        type: data.type || 'Vehicle Breakdown',
-        title: data.title || `${data.type} Alert at ${data.location || 'Field Zone'}`,
+        type: data.type || (isSos ? 'SOS Beacon' : 'Vehicle Breakdown'),
+        title: data.title || (isSos ? `SOS: Immediate Rescue Signal - ${data.location || 'Field Zone'}` : `${data.type} Alert at ${data.location || 'Field Zone'}`),
         location: data.location || '15 km from Station',
         latitude: data.latitude ? Number(data.latitude) : -69.42,
         longitude: data.longitude ? Number(data.longitude) : 76.22,
-        severity: data.severity || 'HIGH',
+        severity: isSos ? 'CRITICAL' : data.severity || 'HIGH',
         peopleAffected: Number(data.peopleAffected) || 1,
-        description: data.description || 'Emergency field incident reported. Rapid response required.',
-        requiredSupport: data.requiredSupport || 'Medical & Mechanical Dispatch',
+        description: data.description || (isSos ? 'EMERGENCY SOS BEACON TRIGGERED: Immediate rescue and medical dispatch requested.' : 'Emergency field incident reported. Rapid response required.'),
+        requiredSupport: data.requiredSupport || (isSos ? 'Emergency Evacuation & SAR Team' : 'Medical & Mechanical Dispatch'),
         status: 'In Progress',
+        isSosEmergency: isSos,
+        reporterUserId: user?.id || null,
+        reporterName: user?.name || data.reporterName || 'Field Member',
         targetStationId: nearestStation?.id || null,
         assignedPersonnelId: qualifiedPersonnel?.id || null,
         assignedAssetId: availableVehicle?.id || null,
+        responseEtaMinutes: 38,
         responsePlanJson: JSON.stringify(responsePlan),
       },
       include: {
@@ -113,11 +121,11 @@ export class IncidentService {
       data: {
         expeditionId,
         severity: incident.severity,
-        title: `EMERGENCY: ${incident.title}`,
-        source: 'Incident Response Dispatcher',
+        title: isSos ? `EMERGENCY SOS BEACON: ${incident.location}` : `EMERGENCY: ${incident.title}`,
+        source: isSos ? 'Field Emergency SOS System' : 'Incident Response Dispatcher',
         affectedEntity: incident.location,
         reason: incident.description,
-        impact: `${incident.peopleAffected} personnel impacted; operational dispatch required.`,
+        impact: `${incident.peopleAffected} personnel impacted; operational rescue dispatch required.`,
         recommendedAction: responsePlan.recommendedSteps[0],
         status: 'ACTIVE',
       },
@@ -136,15 +144,35 @@ export class IncidentService {
     await AuditService.record({
       expeditionId,
       userId: user?.id,
-      userName: user?.name,
-      userRole: user?.role,
-      action: 'CREATE_INCIDENT',
+      userName: user?.name || incident.reporterName,
+      userRole: user?.role || 'FIELD_MEMBER',
+      action: isSos ? 'TRIGGER_SOS_EMERGENCY' : 'CREATE_INCIDENT',
       entity: 'Incident',
       entityId: incident.id,
       reason: `Logged emergency event ${incident.incidentCode} (${incident.title})`,
     });
 
     return incident;
+  }
+
+  public static async triggerSos(
+    expeditionId: string,
+    data: { message?: string; location?: string; latitude?: number; longitude?: number },
+    user?: any
+  ) {
+    return this.createIncident(
+      expeditionId,
+      {
+        ...data,
+        type: 'SOS Beacon',
+        title: `SOS: Immediate Polar Rescue Beacon - ${data.location || 'Field Traverse'}`,
+        severity: 'CRITICAL',
+        isSosEmergency: true,
+        description: data.message || 'EMERGENCY SOS SIGNAL ACTIVATED. Operator reported critical life-safety distress. Polar SAR protocol initiated.',
+        requiredSupport: 'Search and Rescue (SAR) Airborne Evacuation',
+      },
+      user
+    );
   }
 
   public static async dispatchResponse(id: string, user?: any) {
@@ -193,6 +221,59 @@ export class IncidentService {
       entity: 'Incident',
       entityId: id,
       reason: `Authorized emergency rescue response dispatch for ${incident.incidentCode}`,
+    });
+
+    return updated;
+  }
+
+  public static async resolveIncident(id: string, payload: { resolutionNotes?: string }, user?: any) {
+    const incident = await prisma.incident.findUnique({
+      where: { id },
+      include: { assignedPersonnel: true, assignedAsset: true },
+    });
+    if (!incident) throw new Error(`Incident ${id} not found`);
+
+    const updated = await prisma.incident.update({
+      where: { id },
+      data: {
+        status: 'Resolved',
+        resolvedAt: new Date(),
+        resolutionNotes: payload.resolutionNotes || 'Incident safely mitigated and operational status restored.',
+      },
+    });
+
+    // Free up responder personnel if assigned
+    if (incident.assignedPersonnelId) {
+      await prisma.personnel.update({
+        where: { id: incident.assignedPersonnelId },
+        data: { emergencyAvailability: 'Available', status: 'At Station' },
+      });
+    }
+
+    // Resolve linked alerts
+    await prisma.alert.updateMany({
+      where: {
+        expeditionId: incident.expeditionId,
+        status: { in: ['ACTIVE', 'IN_PROGRESS'] },
+        affectedEntity: incident.location,
+      },
+      data: { status: 'RESOLVED' },
+    });
+
+    await RiskService.calculateAndRecordExpeditionRisk(incident.expeditionId);
+    await AlertService.evaluateAndSyncAlerts(incident.expeditionId);
+
+    await AuditService.record({
+      expeditionId: incident.expeditionId,
+      userId: user?.id,
+      userName: user?.name,
+      userRole: user?.role,
+      action: 'RESOLVE_INCIDENT',
+      entity: 'Incident',
+      entityId: id,
+      previousState: incident.status,
+      newState: 'Resolved',
+      reason: `Closed incident ${incident.incidentCode}: ${payload.resolutionNotes || 'Operational risk resolved.'}`,
     });
 
     return updated;

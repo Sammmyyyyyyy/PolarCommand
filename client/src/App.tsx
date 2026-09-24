@@ -39,6 +39,8 @@ import { StationOverview } from './pages/StationOverview';
 import { AlertsActionCenter } from './pages/AlertsActionCenter';
 import { AnalyticsReports } from './pages/AnalyticsReports';
 import { ResourceOptimization } from './pages/ResourceOptimization';
+import { FieldMemberWorkspace } from './pages/FieldMemberWorkspace';
+import { OrganizationAdminPage } from './pages/OrganizationAdminPage';
 
 function MainApp() {
   const [currentPath, setCurrentPath] = useState<string>('/');
@@ -137,6 +139,13 @@ function MainApp() {
           onNavigate={handleNavigate}
           onSelectStation={(_id) => handleNavigate('/stations')}
           onSelectCargo={handleSelectCargo}
+        />
+      )}
+
+      {currentPath === '/field' && (
+        <FieldMemberWorkspace
+          onNavigate={handleNavigate}
+          onRefreshData={handleRefreshAll}
         />
       )}
 
@@ -246,6 +255,16 @@ function MainApp() {
 
       {currentPath === '/analytics' && (
         <AnalyticsReports />
+      )}
+
+      {currentPath === '/organization' && (
+        <OrganizationAdminPage
+          onNavigate={handleNavigate}
+          onSelectExpedition={(id) => {
+            switchExpedition(id);
+            handleNavigate('/dashboard');
+          }}
+        />
       )}
 
       {currentPath === '/optimization' && (

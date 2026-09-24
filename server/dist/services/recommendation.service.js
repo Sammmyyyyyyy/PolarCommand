@@ -8,6 +8,7 @@ export class RecommendationService {
                 inventory: { include: { station: true } },
                 cargo: true,
                 assets: { include: { station: true } },
+                tasks: { where: { status: 'BLOCKED' }, include: { assignedPersonnel: true } },
                 incidents: { where: { status: { not: 'Resolved' } } },
                 alerts: { where: { status: { in: ['ACTIVE', 'ACKNOWLEDGED'] } } },
                 personnel: true,
@@ -60,7 +61,7 @@ export class RecommendationService {
             }
         }
         // 2. Check for Delayed Cargo
-        const delayedCargo = expedition.cargo.filter((c) => c.status === 'Delayed' || c.delayHours > 0);
+        const delayedCargo = expedition.cargo.filter((c) => c.status === 'DELAYED' || c.status === 'Delayed' || c.delayHours > 0);
         for (const c of delayedCargo) {
             recommendations.push({
                 id: `rec-cargo-${c.id}`,
@@ -94,6 +95,23 @@ export class RecommendationService {
                     },
                 });
             }
+        }
+        // 4. Check for Blocked Mission Tasks
+        for (const task of expedition.tasks) {
+            recommendations.push({
+                id: `rec-task-${task.id}`,
+                type: 'TASK_RESOLUTION',
+                title: `Resolve Blocked Task: "${task.title}"`,
+                problem: `Task blocked at ${task.location || 'field sector'}. Personnel: ${task.assignedPersonnel?.name || 'Unassigned'}.`,
+                proposedAction: `Assign alternate support vehicle or reassign task dependencies to clear field blockage.`,
+                reason: task.notes || 'Field member flagged operational impediment requiring command authorization.',
+                urgency: task.priority === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+                expectedImpact: `Restores field task execution schedule and eliminates ${task.priority === 'CRITICAL' ? '8' : '4'} task risk penalty points.`,
+                payload: {
+                    taskId: task.id,
+                    personnelId: task.assignedPersonnelId || undefined,
+                },
+            });
         }
         return recommendations;
     }
