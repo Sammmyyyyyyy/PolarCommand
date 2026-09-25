@@ -349,21 +349,21 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       {/* Top Banner: Member Identity & Offline Resilience Strip */}
-      <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-sm border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white text-[#0A192F] rounded-2xl p-5 shadow-2xs border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="px-2 py-0.5 bg-sky-500/20 text-sky-400 border border-sky-400/30 text-[10px] font-extrabold uppercase rounded tracking-wider">
+            <span className="px-2 py-0.5 bg-sky-50 text-[#0284C7] border border-sky-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
               Field Operations Console
             </span>
-            <span className="text-slate-400 text-xs">
-              Expedition: <strong className="text-white font-mono">{currentExpedition?.code || 'Active'}</strong>
+            <span className="text-slate-500 text-xs">
+              Expedition: <strong className="text-slate-900 font-mono">{currentExpedition?.code || 'Active'}</strong>
             </span>
           </div>
-          <h1 className="text-xl font-black text-white tracking-tight mt-1">
+          <h1 className="text-xl font-black text-[#0A192F] tracking-tight mt-1">
             {currentUser?.name || 'Dr. Maya Lin (Field Specialist)'}
           </h1>
-          <p className="text-xs text-slate-400">
-            Station Assignment: <span className="text-slate-200 font-semibold">{dashboard?.stationsSummary[0]?.name || 'Base Staging Station'}</span> • Role: <span className="text-sky-300 font-semibold">Field Expedition Member</span>
+          <p className="text-xs text-slate-500">
+            Station Assignment: <span className="text-slate-800 font-semibold">{dashboard?.stationsSummary[0]?.name || 'Base Staging Station'}</span> • Role: <span className="text-[#0284C7] font-semibold">Field Expedition Member</span>
           </p>
         </div>
 
@@ -371,12 +371,12 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
         <div className="flex flex-wrap items-center gap-3">
           <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
             offlineState.connectivityStatus === 'ONLINE'
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : offlineState.connectivityStatus === 'WEAK CONNECTION'
-              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
               : offlineState.connectivityStatus === 'SYNCING'
-              ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-              : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+              ? 'bg-sky-50 text-sky-700 border-sky-200'
+              : 'bg-rose-50 text-rose-700 border-rose-200'
           }`}>
             {offlineState.connectivityStatus === 'OFFLINE' ? (
               <WifiOff className="w-4 h-4 animate-pulse" />
@@ -385,7 +385,7 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
             )}
             <span>{offlineState.connectivityStatus}</span>
             {offlineState.queuedMutations.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">
+              <span className="ml-1 px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[10px]">
                 {offlineState.queuedMutations.length} queued
               </span>
             )}
@@ -396,8 +396,8 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
             onClick={() => OfflineSyncService.setSimulatedOffline(!offlineState.simulatedOffline)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
               offlineState.simulatedOffline
-                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-sm'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-2xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 shadow-2xs'
             }`}
           >
             {offlineState.simulatedOffline ? 'Disable Offline Mode' : 'Simulate Offline Mode'}
@@ -406,7 +406,7 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
           {offlineState.queuedMutations.length > 0 && (
             <button
               onClick={handleManualSync}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold rounded-xl transition shadow-xs"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0284C7] hover:bg-sky-700 text-white text-xs font-extrabold rounded-xl transition shadow-2xs"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Sync Now</span>
@@ -416,7 +416,7 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
           {/* Prominent Red Emergency SOS Button */}
           <button
             onClick={() => setShowSosModal(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-black uppercase tracking-wider rounded-xl transition shadow-lg shadow-rose-900/40 ring-2 ring-rose-400/50 animate-pulse"
+            className="flex items-center space-x-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-black uppercase tracking-wider rounded-xl transition shadow-sm animate-pulse"
           >
             <ShieldAlert className="w-4 h-4" />
             <span>Emergency SOS</span>

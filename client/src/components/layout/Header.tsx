@@ -399,20 +399,20 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Hero Quick Control Ribbon */}
-        <div className="bg-slate-900 text-white px-6 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 shadow-inner">
+        <div className="bg-sky-50/70 text-slate-800 border-b border-sky-100 px-6 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
           {currentRole === 'FIELD_MEMBER' ? (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center space-x-2">
-                <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
+                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
                   Field Member Mode
                 </span>
-                <span className="text-slate-300 font-medium text-[11px]">
+                <span className="text-slate-600 font-medium text-[11px]">
                   Logged in as Field Member. High-level command actions are restricted to Commander/Admin.
                 </span>
               </div>
               <button
                 onClick={() => onNavigate && onNavigate('/field')}
-                className="flex items-center space-x-1.5 px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded font-bold text-[11px] transition shadow-xs"
+                className="flex items-center space-x-1.5 px-3 py-1 bg-[#0284C7] hover:bg-sky-700 text-white rounded font-bold text-[11px] transition shadow-2xs"
               >
                 <Compass className="w-3.5 h-3.5" />
                 <span>Go to Field Member Workspace</span>
@@ -421,10 +421,10 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <>
               <div className="flex items-center space-x-2">
-                <span className="px-1.5 py-0.5 bg-sky-500 text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
+                <span className="px-1.5 py-0.5 bg-[#0284C7] text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
                   Decision Support
                 </span>
-                <span className="text-slate-300 font-medium text-[11px] hidden sm:inline">
+                <span className="text-slate-600 font-medium text-[11px] hidden sm:inline">
                   Expedition Operations:
                 </span>
               </div>
@@ -433,7 +433,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   onClick={handleSimulateDelay}
                   disabled={isProcessing}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
+                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded font-semibold text-[11px] transition shadow-2xs disabled:opacity-50"
                   title="Simulate delay to trigger automated risk cascade and alert generation"
                 >
                   <Zap className="w-3.5 h-3.5" />
@@ -443,7 +443,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   onClick={handleExecuteHeroAction}
                   disabled={isProcessing || !canExecuteActions}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded font-semibold text-[11px] transition shadow-xs disabled:opacity-50"
+                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-semibold text-[11px] transition shadow-2xs disabled:opacity-50"
                   title={
                     canExecuteActions
                       ? 'Execute recommended reallocation to mitigate risk'
@@ -457,10 +457,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   onClick={handleReset}
                   disabled={isProcessing}
-                  className="flex items-center space-x-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[11px] transition"
+                  className="flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-medium transition shadow-2xs"
                   title="Reset state to baseline"
                 >
-                  <RotateCcw className="w-3 h-3" />
+                  <RotateCcw className="w-3 h-3 text-slate-400" />
                   <span className="hidden md:inline">Reset</span>
                 </button>
               </div>
