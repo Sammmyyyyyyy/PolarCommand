@@ -15,6 +15,7 @@ import {
   Boxes,
 } from 'lucide-react';
 import { useExpedition } from '../context/ExpeditionContext';
+import { useAuth } from '../context/AuthContext';
 import { reseedDemoData, deleteExpedition } from '../services/api';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { EmptyState } from '../components/common/EmptyState';
@@ -31,6 +32,7 @@ export const ExpeditionListPage: React.FC<ExpeditionListPageProps> = ({
   onCreateNew,
 }) => {
   const { expeditions, switchExpedition, triggerRefresh, currentExpeditionId } = useExpedition();
+  const { canCreateExpedition, isAdmin } = useAuth();
   const [isReseeding, setIsReseeding] = useState(false);
   const [expeditionToDelete, setExpeditionToDelete] = useState<string | null>(null);
 
@@ -92,13 +94,15 @@ export const ExpeditionListPage: React.FC<ExpeditionListPageProps> = ({
             <RotateCcw className={`w-3.5 h-3.5 ${isReseeding ? 'animate-spin' : ''}`} />
             <span>{isReseeding ? 'Restoring Seed...' : 'Load / Reset Demo (INPEX-2027)'}</span>
           </button>
-          <button
-            onClick={() => (onCreateNew ? onCreateNew() : onNavigate('/expeditions/new'))}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create New Expedition</span>
-          </button>
+          {(canCreateExpedition || isAdmin) && (
+            <button
+              onClick={() => (onCreateNew ? onCreateNew() : onNavigate('/expeditions/new'))}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create New Expedition</span>
+            </button>
+          )}
         </div>
       </div>
 

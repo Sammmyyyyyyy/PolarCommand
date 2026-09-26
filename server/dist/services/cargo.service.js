@@ -91,6 +91,50 @@ export class CargoService {
             where: { id },
             data: updateData,
         });
+        // If cargo arrived at destination, fulfill any linked restock requests and replenish inventory
+        const isArrived = updated.status === 'DELIVERED' || updated.status === 'AT_STATION';
+        if (isArrived) {
+            const linkedRequests = await prisma.restockRequest.findMany({
+                where: { linkedCargoId: id, status: { in: ['CARGO_CREATED', 'IN_TRANSIT', 'PENDING', 'APPROVED'] } },
+                include: { item: true, station: true },
+            });
+            for (const req of linkedRequests) {
+                await prisma.inventoryItem.update({
+                    where: { id: req.itemId },
+                    data: {
+                        currentStock: { increment: req.requestedQuantity },
+                        riskStatus: 'Normal',
+                    },
+                });
+                await prisma.restockRequest.update({
+                    where: { id: req.id },
+                    data: {
+                        status: 'FULFILLED',
+                        resolvedAt: new Date(),
+                    },
+                });
+                // Resolve shortage alerts
+                await prisma.alert.updateMany({
+                    where: {
+                        expeditionId: prev.expeditionId,
+                        status: { in: ['ACTIVE', 'IN_PROGRESS', 'New'] },
+                        affectedEntity: { contains: req.station.name },
+                        title: { contains: req.item.itemName },
+                    },
+                    data: { status: 'RESOLVED' },
+                });
+                await AuditService.record({
+                    expeditionId: prev.expeditionId,
+                    userId: user?.id,
+                    userName: user?.name,
+                    userRole: user?.role,
+                    action: 'FULFILL_RESTOCK_REQUEST',
+                    entity: 'RestockRequest',
+                    entityId: req.id,
+                    reason: `Restock request fulfilled via arrival of Cargo ${updated.cargoCode}. Stock for ${req.item.itemName} at ${req.station.name} replenished by +${req.requestedQuantity} ${req.item.unit}.`,
+                });
+            }
+        }
         await RiskService.calculateAndRecordExpeditionRisk(prev.expeditionId);
         await AlertService.evaluateAndSyncAlerts(prev.expeditionId);
         await AuditService.record({

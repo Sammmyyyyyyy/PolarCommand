@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../config/database.js';
 import { ENV } from '../config/env.js';
 import { OrganizationService } from './organization.service.js';
+import { normalizeRole, getRolePermissions } from '../middleware/authorization.js';
 
 export interface TokenPayload {
   userId: string;
@@ -12,6 +13,8 @@ export interface TokenPayload {
   stationId?: string | null;
   organizationId?: string | null;
   assignedPersonnelId?: string | null;
+  assignedExpeditionId?: string | null;
+  permissions?: string[];
 }
 
 export class AuthService {
@@ -42,15 +45,22 @@ export class AuthService {
     role: string;
     password?: string;
     organizationId?: string | null;
+    stationId?: string | null;
+    assignedExpeditionId?: string | null;
+    assignedPersonnelId?: string | null;
   }) {
+    const role = normalizeRole(data.role);
     const passwordHash = await this.hashPassword(data.password || 'password123');
     return prisma.user.create({
       data: {
         email: data.email.toLowerCase(),
         name: data.name,
-        role: data.role,
+        role,
         passwordHash,
         organizationId: data.organizationId || null,
+        stationId: data.stationId || null,
+        assignedExpeditionId: data.assignedExpeditionId || null,
+        assignedPersonnelId: data.assignedPersonnelId || null,
       },
       include: { organization: true },
     });
@@ -65,68 +75,111 @@ export class AuthService {
   public static async seedDefaultUsers(): Promise<void> {
     const defaultOrg = await OrganizationService.getOrCreateDefaultOrganization();
 
+    // Find default expedition and stations if available
+    const rootExpedition = await prisma.expedition.findFirst();
+    const maitriStation = await prisma.station.findFirst({ where: { code: 'MAITRI' } });
+    const bharatiStation = await prisma.station.findFirst({ where: { code: 'BHARATI' } });
+    const rahulPersonnel = await prisma.personnel.findFirst({ where: { name: { contains: 'Rahul Sharma' } } });
+    const arjunPersonnel = await prisma.personnel.findFirst({ where: { name: { contains: 'Arjun Das' } } });
+
     const defaultUsers = [
       {
-        email: 'commander@polarcommand.org',
-        name: 'Dr. Rajesh Nair',
-        role: 'COMMANDER',
-        password: 'password123',
-      },
-      {
         email: 'admin@polarcommand.org',
-        name: 'Mission Control Admin',
+        name: 'Samyak Trivedi',
         role: 'ADMIN',
         password: 'password123',
+        stationId: null,
+        assignedExpeditionId: rootExpedition?.id || null,
       },
       {
-        email: 'logistics@polarcommand.org',
-        name: 'Vikram Sethi',
-        role: 'LOGISTICS_OFFICER',
+        email: 'maitri.manager@polarcommand.org',
+        name: 'Dr. Suresh Sen',
+        role: 'STATION_MANAGER',
         password: 'password123',
+        stationId: maitriStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
       },
       {
         email: 'bharati.manager@polarcommand.org',
         name: 'Dr. Anita Singh',
         role: 'STATION_MANAGER',
         password: 'password123',
+        stationId: bharatiStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+      },
+      {
+        email: 'leader@polarcommand.org',
+        name: 'Dr. Rajesh Nair',
+        role: 'EXPEDITION_LEADER',
+        password: 'password123',
+        stationId: bharatiStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+      },
+      {
+        email: 'commander@polarcommand.org',
+        name: 'Dr. Rajesh Nair',
+        role: 'EXPEDITION_LEADER',
+        password: 'password123',
+        stationId: bharatiStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+      },
+      {
+        email: 'member@polarcommand.org',
+        name: 'Rahul Sharma',
+        role: 'TEAM_MEMBER',
+        password: 'password123',
+        stationId: bharatiStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+        assignedPersonnelId: rahulPersonnel?.id || null,
       },
       {
         email: 'field1@polarcommand.org',
-        name: 'Dr. Maya Lin',
-        role: 'FIELD_MEMBER',
+        name: 'Field Member Alpha',
+        role: 'TEAM_MEMBER',
         password: 'password123',
+        stationId: bharatiStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+        assignedPersonnelId: null,
       },
       {
         email: 'field2@polarcommand.org',
-        name: 'Tenzing Norgay Jr.',
-        role: 'FIELD_MEMBER',
+        name: 'Arjun Das',
+        role: 'TEAM_MEMBER',
         password: 'password123',
-      },
-      {
-        email: 'viewer@polarcommand.org',
-        name: 'Science Telemetry Observer',
-        role: 'VIEWER',
-        password: 'password123',
+        stationId: maitriStation?.id || null,
+        assignedExpeditionId: rootExpedition?.id || null,
+        assignedPersonnelId: arjunPersonnel?.id || null,
       },
     ];
 
     for (const u of defaultUsers) {
       const existing = await prisma.user.findUnique({ where: { email: u.email.toLowerCase() } });
+      const passwordHash = await this.hashPassword(u.password);
       if (!existing) {
-        const passwordHash = await this.hashPassword(u.password);
         await prisma.user.create({
           data: {
             email: u.email.toLowerCase(),
             name: u.name,
-            role: u.role,
+            role: normalizeRole(u.role),
             organizationId: defaultOrg.id,
+            stationId: u.stationId,
+            assignedExpeditionId: u.assignedExpeditionId,
+            assignedPersonnelId: u.assignedPersonnelId,
             passwordHash,
           },
         });
-      } else if (!existing.organizationId) {
+      } else {
         await prisma.user.update({
           where: { id: existing.id },
-          data: { organizationId: defaultOrg.id },
+          data: {
+            name: u.name,
+            role: normalizeRole(u.role),
+            organizationId: defaultOrg.id,
+            stationId: u.stationId || existing.stationId,
+            assignedExpeditionId: u.assignedExpeditionId || existing.assignedExpeditionId,
+            assignedPersonnelId: u.assignedPersonnelId ?? null,
+            passwordHash,
+          },
         });
       }
     }
@@ -139,6 +192,9 @@ export class AuthService {
       include: {
         organization: true,
         assignedPersonnel: true,
+        assignedExpedition: {
+          select: { id: true, code: true, title: true, status: true },
+        },
       },
     });
     if (!user) return null;
@@ -146,18 +202,50 @@ export class AuthService {
     const isValid = await this.comparePassword(password, user.passwordHash);
     if (!isValid) return null;
 
-    const token = this.generateToken({
+    const normalized = normalizeRole(user.role);
+    const permissions = getRolePermissions(normalized);
+
+    // If expedition is not set on user, fallback to first active expedition
+    let assignedExpId = user.assignedExpeditionId;
+    if (!assignedExpId && user.assignedPersonnel?.expeditionId) {
+      assignedExpId = user.assignedPersonnel.expeditionId;
+    }
+    if (!assignedExpId) {
+      const defaultExp = await prisma.expedition.findFirst();
+      assignedExpId = defaultExp?.id || null;
+    }
+
+    // If stationId is not set on user, fallback to personnel station if available
+    let stationId = user.stationId;
+    if (!stationId && user.assignedPersonnel?.assignedStationId) {
+      stationId = user.assignedPersonnel.assignedStationId;
+    }
+
+    const payload: TokenPayload = {
       userId: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
-      stationId: user.stationId,
+      role: normalized,
+      stationId,
       organizationId: user.organizationId,
       assignedPersonnelId: user.assignedPersonnelId,
-    });
+      assignedExpeditionId: assignedExpId,
+      permissions,
+    };
 
+    const token = this.generateToken(payload);
     const { passwordHash: _, ...safeUser } = user;
-    return { token, user: safeUser };
+
+    return {
+      token,
+      user: {
+        ...safeUser,
+        role: normalized,
+        permissions,
+        stationId,
+        assignedExpeditionId: assignedExpId,
+      },
+    };
   }
 
   public static async listUsers(organizationId?: string): Promise<any[]> {
@@ -176,12 +264,17 @@ export class AuthService {
         stationId: true,
         organizationId: true,
         assignedPersonnelId: true,
+        assignedExpeditionId: true,
         organization: { select: { id: true, name: true, code: true } },
         assignedPersonnel: { select: { id: true, name: true, role: true, currentLocation: true } },
         createdAt: true,
       },
       orderBy: { name: 'asc' },
     });
-    return users;
+    return users.map((u) => ({
+      ...u,
+      role: normalizeRole(u.role),
+      permissions: getRolePermissions(normalizeRole(u.role)),
+    }));
   }
 }

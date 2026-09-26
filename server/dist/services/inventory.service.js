@@ -3,8 +3,33 @@ import { RiskService } from './risk.service.js';
 import { AlertService } from './alert.service.js';
 import { AuditService } from './audit.service.js';
 export class InventoryService {
+    /**
+     * Helper to derive inventory health status and recommended restock
+     */
+    static deriveStatus(currentStock, minThreshold) {
+        const threshold = minThreshold > 0 ? minThreshold : 100;
+        let status = 'NORMAL';
+        let riskStatus = 'Normal';
+        if (currentStock <= threshold * 0.5) {
+            status = 'CRITICAL';
+            riskStatus = 'Critical';
+        }
+        else if (currentStock <= threshold) {
+            status = 'LOW';
+            riskStatus = 'Warning';
+        }
+        const recommendedRestock = Math.max(Math.ceil(threshold * 2 - currentStock), threshold);
+        return {
+            status,
+            riskStatus,
+            needsRestock: status !== 'NORMAL',
+            recommendedRestock,
+        };
+    }
     static async listInventory(expeditionId, stationId, category) {
-        const where = { expeditionId };
+        const where = {};
+        if (expeditionId)
+            where.expeditionId = expeditionId;
         if (stationId && stationId !== 'all')
             where.stationId = stationId;
         if (category && category !== 'All')
@@ -14,40 +39,81 @@ export class InventoryService {
             include: {
                 station: true,
                 linkedCargo: true,
+                restockRequests: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 3,
+                },
             },
             orderBy: { itemName: 'asc' },
         });
         return items.map((item) => {
             const daily = item.dailyUsage > 0 ? item.dailyUsage : 1;
             const daysOfSupply = Math.round(item.currentStock / daily);
-            const isBreached = daysOfSupply <= item.safetyThresholdDays;
-            const riskStatus = daysOfSupply <= 5 ? 'Critical' : isBreached ? 'High Risk' : daysOfSupply <= item.safetyThresholdDays + 3 ? 'Warning' : 'Normal';
+            const minThreshold = item.minThreshold ?? 100;
+            const derived = this.deriveStatus(item.currentStock, minThreshold);
             // Projected stockout date
             const stockoutDate = new Date();
             stockoutDate.setDate(stockoutDate.getDate() + daysOfSupply);
+            const activeRestockRequest = item.restockRequests.find((r) => r.status === 'PENDING' || r.status === 'APPROVED' || r.status === 'CARGO_CREATED' || r.status === 'IN_TRANSIT');
             return {
                 ...item,
+                minThreshold,
                 daysOfSupply,
                 stockoutDate,
-                riskStatus,
+                inventoryStatus: derived.status,
+                riskStatus: derived.riskStatus,
+                needsRestock: derived.needsRestock,
+                recommendedRestock: derived.recommendedRestock,
+                activeRestockRequest: activeRestockRequest || null,
             };
         });
     }
-    static async createInventoryItem(expeditionId, data, user) {
+    static async getInventoryItem(id) {
+        const item = await prisma.inventoryItem.findUnique({
+            where: { id },
+            include: {
+                station: true,
+                linkedCargo: true,
+                restockRequests: true,
+            },
+        });
+        if (!item)
+            return null;
+        const minThreshold = item.minThreshold ?? 100;
+        const derived = this.deriveStatus(item.currentStock, minThreshold);
+        return {
+            ...item,
+            minThreshold,
+            inventoryStatus: derived.status,
+            riskStatus: derived.riskStatus,
+            needsRestock: derived.needsRestock,
+            recommendedRestock: derived.recommendedRestock,
+        };
+    }
+    static async createInventoryItem(stationId, data, user) {
+        const station = await prisma.station.findUnique({ where: { id: stationId } });
+        if (!station)
+            throw new Error(`Station ${stationId} not found`);
+        const expeditionId = data.expeditionId || station.expeditionId;
+        const currentStock = Number(data.currentStock ?? data.quantity ?? 0);
+        const minThreshold = Number(data.minThreshold ?? data.minimumQuantity ?? 100);
+        const derived = this.deriveStatus(currentStock, minThreshold);
         const item = await prisma.inventoryItem.create({
             data: {
                 expeditionId,
-                stationId: data.stationId,
-                category: data.category,
-                itemName: data.itemName,
-                currentStock: Number(data.currentStock) || 0,
+                stationId,
+                category: data.category || 'General',
+                itemName: data.itemName || data.name,
+                currentStock,
                 unit: data.unit || 'units',
                 dailyUsage: Number(data.dailyUsage) || 1,
                 safetyThresholdDays: Number(data.safetyThresholdDays) || 10,
+                minThreshold,
+                notes: data.notes || null,
                 expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
                 replenishmentEta: data.replenishmentEta ? new Date(data.replenishmentEta) : null,
                 linkedCargoId: data.linkedCargoId || null,
-                riskStatus: 'Normal',
+                riskStatus: derived.riskStatus,
             },
             include: { station: true },
         });
@@ -61,7 +127,7 @@ export class InventoryService {
             action: 'CREATE_INVENTORY',
             entity: 'InventoryItem',
             entityId: item.id,
-            reason: `Added inventory line ${item.itemName} (${item.currentStock} ${item.unit}) at ${item.station.name}`,
+            reason: `Station Manager logged new inventory: ${item.itemName} (${item.currentStock} ${item.unit}) at ${station.name}`,
         });
         return item;
     }
@@ -72,10 +138,20 @@ export class InventoryService {
         const updateData = { ...data };
         if (data.currentStock !== undefined)
             updateData.currentStock = Number(data.currentStock);
+        if (data.quantity !== undefined)
+            updateData.currentStock = Number(data.quantity);
+        if (data.minThreshold !== undefined)
+            updateData.minThreshold = Number(data.minThreshold);
+        if (data.minimumQuantity !== undefined)
+            updateData.minThreshold = Number(data.minimumQuantity);
         if (data.dailyUsage !== undefined)
             updateData.dailyUsage = Number(data.dailyUsage);
         if (data.safetyThresholdDays !== undefined)
             updateData.safetyThresholdDays = Number(data.safetyThresholdDays);
+        const stock = updateData.currentStock !== undefined ? updateData.currentStock : prev.currentStock;
+        const min = updateData.minThreshold !== undefined ? updateData.minThreshold : prev.minThreshold;
+        const derived = this.deriveStatus(stock, min);
+        updateData.riskStatus = derived.riskStatus;
         const updated = await prisma.inventoryItem.update({
             where: { id },
             data: updateData,
@@ -93,9 +169,176 @@ export class InventoryService {
             entityId: id,
             previousState: prev.currentStock,
             newState: updated.currentStock,
-            reason: `Updated inventory levels for ${updated.itemName} at ${updated.station.name}`,
+            reason: `Updated inventory levels for ${updated.itemName} at ${updated.station.name} (${prev.currentStock} -> ${updated.currentStock} ${updated.unit})`,
         });
         return updated;
+    }
+    /**
+     * Station Manager initiates restock request for low/critical item.
+     * Creates RestockRequest entity and global Admin alert.
+     */
+    static async createRestockRequest(itemId, data, user) {
+        const item = await prisma.inventoryItem.findUnique({
+            where: { id: itemId },
+            include: { station: true, expedition: true },
+        });
+        if (!item)
+            throw new Error(`Inventory item ${itemId} not found`);
+        const minThreshold = item.minThreshold ?? 100;
+        const derived = this.deriveStatus(item.currentStock, minThreshold);
+        const requestedQty = Number(data.requestedQuantity) || derived.recommendedRestock;
+        const priority = data.priority || (derived.status === 'CRITICAL' ? 'CRITICAL' : 'HIGH');
+        const restockRequest = await prisma.restockRequest.create({
+            data: {
+                stationId: item.stationId,
+                itemId: item.id,
+                requestedById: user?.id || null,
+                requestedByName: user?.name || 'Station Manager',
+                requestedQuantity: requestedQty,
+                currentQuantity: item.currentStock,
+                minimumQuantity: minThreshold,
+                priority,
+                status: 'PENDING',
+                adminNotes: data.notes || null,
+            },
+            include: {
+                station: true,
+                item: true,
+            },
+        });
+        // Automatically create a high-visibility global alert for Admin
+        await prisma.alert.create({
+            data: {
+                expeditionId: item.expeditionId,
+                severity: priority === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+                title: `Inventory Shortage at ${item.station.name}`,
+                source: 'INVENTORY_SHORTAGE_REQUEST',
+                affectedEntity: `${item.station.name} (${item.itemName})`,
+                reason: `Current stock: ${item.currentStock} ${item.unit} is below minimum threshold of ${minThreshold} ${item.unit}. Requested: ${requestedQty} ${item.unit}.`,
+                impact: `Potential operational disruption at ${item.station.name} if replenishment is delayed.`,
+                recommendedAction: `Review restock request and place cargo operation for ${requestedQty} ${item.unit} ${item.itemName}.`,
+                status: 'ACTIVE',
+            },
+        });
+        await RiskService.calculateAndRecordExpeditionRisk(item.expeditionId);
+        await AlertService.evaluateAndSyncAlerts(item.expeditionId);
+        await AuditService.record({
+            expeditionId: item.expeditionId,
+            userId: user?.id,
+            userName: user?.name,
+            userRole: user?.role,
+            action: 'REQUEST_RESTOCK',
+            entity: 'RestockRequest',
+            entityId: restockRequest.id,
+            reason: `Station Manager submitted restock request for ${requestedQty} ${item.unit} of ${item.itemName} at ${item.station.name}`,
+        });
+        return restockRequest;
+    }
+    static async listRestockRequests(filters) {
+        const where = {};
+        if (filters?.stationId && filters.stationId !== 'all') {
+            where.stationId = filters.stationId;
+        }
+        if (filters?.status && filters.status !== 'all') {
+            where.status = filters.status;
+        }
+        return prisma.restockRequest.findMany({
+            where,
+            include: {
+                station: true,
+                item: true,
+                requestedBy: { select: { id: true, name: true, email: true, role: true } },
+                linkedCargo: true,
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+    static async getRestockRequest(id) {
+        return prisma.restockRequest.findUnique({
+            where: { id },
+            include: {
+                station: true,
+                item: true,
+                requestedBy: { select: { id: true, name: true, email: true, role: true } },
+                linkedCargo: true,
+            },
+        });
+    }
+    /**
+     * Admin converts restock request into an active Cargo Operation.
+     */
+    static async fulfillWithCargo(requestId, cargoData, adminUser) {
+        const request = await prisma.restockRequest.findUnique({
+            where: { id: requestId },
+            include: { item: true, station: true },
+        });
+        if (!request)
+            throw new Error(`Restock request ${requestId} not found`);
+        const expeditionId = cargoData.expeditionId || request.station.expeditionId;
+        const cargoCode = cargoData.cargoCode || `CRG-${request.item.category.toUpperCase().slice(0, 3)}-${Date.now().toString().slice(-4)}`;
+        // 1. Create Cargo Shipment
+        const cargo = await prisma.cargo.create({
+            data: {
+                expeditionId,
+                cargoCode,
+                description: cargoData.description || `Restock Shipment: ${request.requestedQuantity} ${request.item.unit} ${request.item.itemName} for ${request.station.name}`,
+                category: request.item.category || 'General',
+                weightKg: Number(cargoData.weightKg) || Number(request.requestedQuantity) * 1.5,
+                quantity: Number(request.requestedQuantity),
+                origin: cargoData.origin || 'Cape Town Staging Port',
+                destination: `${request.station.name} (${request.station.code})`,
+                currentLocation: cargoData.currentLocation || cargoData.origin || 'Cape Town Logistics Berth',
+                transportMode: cargoData.transportMode || 'Snow Vehicle',
+                priority: request.priority || 'HIGH',
+                departureDate: new Date(cargoData.departureDate || Date.now()),
+                eta: new Date(cargoData.eta || Date.now() + 86400000 * 7),
+                originalEta: new Date(cargoData.eta || Date.now() + 86400000 * 7),
+                delayHours: 0,
+                specialRequirements: cargoData.specialRequirements || `Priority replenishment cargo linked to Request #${request.id.slice(0, 8)}`,
+                status: 'IN_TRANSIT',
+                vesselName: cargoData.vesselName || 'MV Polar Queen',
+            },
+        });
+        // 2. Link Cargo to Restock Request and update status
+        const updatedRequest = await prisma.restockRequest.update({
+            where: { id: requestId },
+            data: {
+                linkedCargoId: cargo.id,
+                status: 'CARGO_CREATED',
+                adminNotes: cargoData.adminNotes || `Cargo dispatch ${cargo.cargoCode} assigned by ${adminUser?.name || 'Admin'}.`,
+            },
+            include: {
+                station: true,
+                item: true,
+                linkedCargo: true,
+            },
+        });
+        // 3. Update related shortage alert to IN_PROGRESS
+        await prisma.alert.updateMany({
+            where: {
+                expeditionId,
+                status: { in: ['ACTIVE', 'New'] },
+                affectedEntity: { contains: request.station.name },
+                title: { contains: request.item.itemName },
+            },
+            data: {
+                status: 'IN_PROGRESS',
+                impact: `Cargo ${cargo.cargoCode} dispatched. Estimated delivery ${cargo.eta.toLocaleDateString()}.`,
+            },
+        });
+        await RiskService.calculateAndRecordExpeditionRisk(expeditionId);
+        await AlertService.evaluateAndSyncAlerts(expeditionId);
+        await AuditService.record({
+            expeditionId,
+            userId: adminUser?.id,
+            userName: adminUser?.name,
+            userRole: adminUser?.role || 'ADMIN',
+            action: 'DISPATCH_RESTOCK_CARGO',
+            entity: 'RestockRequest',
+            entityId: requestId,
+            reason: `Admin created cargo shipment ${cargo.cargoCode} to fulfill restock request for ${request.item.itemName} at ${request.station.name}`,
+        });
+        return { request: updatedRequest, cargo };
     }
     static async deleteInventoryItem(id, user) {
         const item = await prisma.inventoryItem.findUnique({ where: { id } });

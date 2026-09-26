@@ -24,6 +24,9 @@ import {
   OperationalDocument,
   ExpeditionReadinessResult,
   OrganizationOverview,
+  AdminGlobalSummary,
+  RestockRequest,
+  MemberTracking,
 } from '../types';
 
 const API_BASE = '/api';
@@ -148,8 +151,9 @@ export async function fetchDashboard(expeditionId?: string): Promise<DashboardSu
 // -------------------------------------------------------------
 // Stations
 // -------------------------------------------------------------
-export async function fetchStations(expeditionId: string): Promise<Station[]> {
-  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/stations`, { headers: getAuthHeaders() });
+export async function fetchStations(expeditionId?: string): Promise<Station[]> {
+  const url = expeditionId ? `${API_BASE}/expeditions/${expeditionId}/stations` : `${API_BASE}/stations`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch stations');
   return res.json();
 }
@@ -270,18 +274,42 @@ export async function reallocateInventory(expeditionId: string, data: any): Prom
   return res.json();
 }
 
-export async function updateInventoryItem(expeditionId: string, id: string, data: any): Promise<InventoryItem> {
-  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/inventory/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to update inventory item');
-  return res.json();
+export async function updateInventoryItem(
+  expeditionIdOrItemId: string,
+  idOrData: any,
+  maybeData?: any
+): Promise<InventoryItem> {
+  if (maybeData !== undefined) {
+    const expeditionId = expeditionIdOrItemId;
+    const id = idOrData as string;
+    const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/inventory/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(maybeData),
+    });
+    if (!res.ok) throw new Error('Failed to update inventory item');
+    return res.json();
+  } else {
+    const itemId = expeditionIdOrItemId;
+    const data = idOrData;
+    const res = await fetch(`${API_BASE}/inventory/${itemId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to update inventory item');
+    }
+    return res.json();
+  }
 }
 
-export async function deleteInventoryItem(expeditionId: string, id: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/inventory/${id}`, {
+export async function deleteInventoryItem(expeditionIdOrItemId: string, maybeId?: string): Promise<any> {
+  const url = maybeId !== undefined
+    ? `${API_BASE}/expeditions/${expeditionIdOrItemId}/inventory/${maybeId}`
+    : `${API_BASE}/inventory/${expeditionIdOrItemId}`;
+  const res = await fetch(url, {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
@@ -916,6 +944,227 @@ export async function fetchResourceAvailability(expeditionId: string, orgId?: st
   if (!res.ok) throw new Error('Failed to fetch resource availability');
   return res.json();
 }
+
+// -------------------------------------------------------------
+// Admin Command Center Global Telemetry
+// -------------------------------------------------------------
+export async function fetchAdminSummary(): Promise<AdminGlobalSummary> {
+  const res = await fetch(`${API_BASE}/admin/summary`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch admin global telemetry');
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Station Inventory & Restock Workflow
+// -------------------------------------------------------------
+export async function fetchStationInventory(stationId: string): Promise<InventoryItem[]> {
+  const res = await fetch(`${API_BASE}/stations/${stationId}/inventory`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch station inventory');
+  return res.json();
+}
+
+export async function createStationInventoryItem(stationId: string, data: any): Promise<InventoryItem> {
+  const res = await fetch(`${API_BASE}/stations/${stationId}/inventory`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to create inventory item');
+  }
+  return res.json();
+}
+
+export async function requestInventoryRestock(
+  itemId: string,
+  data: { requestedQuantity?: number; priority?: string; notes?: string }
+): Promise<RestockRequest> {
+  const res = await fetch(`${API_BASE}/inventory/${itemId}/restock-request`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to submit restock request');
+  }
+  return res.json();
+}
+
+export const requestItemRestock = requestInventoryRestock;
+
+export async function fetchRestockRequests(params?: { stationId?: string; status?: string }): Promise<RestockRequest[]> {
+  const query = new URLSearchParams();
+  if (params?.stationId) query.append('stationId', params.stationId);
+  if (params?.status) query.append('status', params.status);
+
+  const res = await fetch(`${API_BASE}/restock-requests?${query.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch restock requests');
+  return res.json();
+}
+
+export async function fulfillRestockWithCargo(
+  requestId: string,
+  cargoData: {
+    expeditionId?: string;
+    cargoCode?: string;
+    description?: string;
+    transportMode?: string;
+    departureDate?: string;
+    eta?: string;
+    weightKg?: number;
+    adminNotes?: string;
+  }
+): Promise<{ request: RestockRequest; cargo: CargoShipment }> {
+  const res = await fetch(`${API_BASE}/restock-requests/${requestId}/create-cargo`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(cargoData),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to dispatch cargo for restock request');
+  }
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Equipment & Assignment
+// -------------------------------------------------------------
+export async function fetchEquipment(params?: { expeditionId?: string; stationId?: string; type?: string }): Promise<Asset[]> {
+  const query = new URLSearchParams();
+  if (params?.expeditionId) query.append('expeditionId', params.expeditionId);
+  if (params?.stationId) query.append('stationId', params.stationId);
+  if (params?.type) query.append('type', params.type);
+
+  const res = await fetch(`${API_BASE}/equipment?${query.toString()}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch equipment roster');
+  return res.json();
+}
+
+export async function fetchMyEquipment(): Promise<Asset[]> {
+  const res = await fetch(`${API_BASE}/my/equipment`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch my equipment');
+  return res.json();
+}
+
+export async function assignEquipment(
+  equipmentId: string,
+  personnelIdOrData: string | { personnelId: string; personnelName?: string }
+): Promise<Asset> {
+  const payload = typeof personnelIdOrData === 'string'
+    ? { personnelId: personnelIdOrData }
+    : personnelIdOrData;
+
+  const res = await fetch(`${API_BASE}/equipment/${equipmentId}/assign`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to assign equipment');
+  }
+  return res.json();
+}
+
+export async function unassignEquipment(equipmentId: string): Promise<Asset> {
+  const res = await fetch(`${API_BASE}/equipment/${equipmentId}/unassign`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to unassign equipment');
+  }
+  return res.json();
+}
+
+// -------------------------------------------------------------
+// Tracking & Telemetry
+// -------------------------------------------------------------
+export async function recordLocationPing(data: {
+  personnelId?: string;
+  expeditionId?: string;
+  deviceId?: string;
+  latitude: number;
+  longitude: number;
+  battery?: number;
+  connectionStatus?: string;
+  isSos?: boolean;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/tracking/location`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to record location telemetry');
+  return res.json();
+}
+
+export const sendLocationPing = recordLocationPing;
+
+export async function fetchExpeditionTracking(expeditionId: string): Promise<MemberTracking[]> {
+  const res = await fetch(`${API_BASE}/tracking/${expeditionId}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch expedition tracking');
+  return res.json();
+}
+
+export async function fetchTeamMap(expeditionId: string): Promise<MemberTracking[]> {
+  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/team-map`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to load team map');
+  return res.json();
+}
+
+export const fetchExpeditionMembersLocations = fetchTeamMap;
+
+// -------------------------------------------------------------
+// Emergency Reporting
+// -------------------------------------------------------------
+export async function reportEmergency(data: {
+  expeditionId?: string;
+  incidentType?: string;
+  type?: string;
+  severity?: string;
+  location: string;
+  latitude?: number;
+  longitude?: number;
+  description: string;
+  peopleAffected?: number;
+}): Promise<Incident> {
+  const payload = {
+    ...data,
+    type: data.type || data.incidentType || 'Emergency',
+  };
+  const res = await fetch(`${API_BASE}/emergencies`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to dispatch emergency SOS report');
+  }
+  return res.json();
+}
+
+export const reportEmergencyIncident = reportEmergency;
+
 
 
 

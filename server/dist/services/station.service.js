@@ -2,8 +2,11 @@ import { prisma } from '../config/database.js';
 import { AuditService } from './audit.service.js';
 export class StationService {
     static async listStations(expeditionId) {
+        const where = {};
+        if (expeditionId && expeditionId !== 'all')
+            where.expeditionId = expeditionId;
         return prisma.station.findMany({
-            where: { expeditionId },
+            where,
             include: {
                 weather: { orderBy: { recordedAt: 'desc' }, take: 1 },
                 _count: {

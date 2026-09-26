@@ -19,7 +19,8 @@ import { WeatherService } from '../services/weather.service.js';
 import { ObservationService } from '../services/observation.service.js';
 import { DocumentService } from '../services/document.service.js';
 import { seedDemoData } from '../seed/demo-data.js';
-import { AuthenticatedRequest, requireRole } from '../middleware/auth.middleware.js';
+import { AuthenticatedRequest, requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import { requirePermission } from '../middleware/authorization.js';
 
 export const expeditionRouter = Router();
 
@@ -46,8 +47,8 @@ expeditionRouter.post('/seed-demo', async (_req: Request, res: Response) => {
   }
 });
 
-// Create expedition
-expeditionRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
+// Create expedition - STRICT ADMIN ONLY
+expeditionRouter.post('/', requireAuth, requirePermission('expedition:create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const expedition = await ExpeditionService.createExpedition(req.body, req.user);
     res.status(201).json(expedition);
@@ -68,7 +69,7 @@ expeditionRouter.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Update expedition
-expeditionRouter.put('/:id', async (req: AuthenticatedRequest, res: Response) => {
+expeditionRouter.put('/:id', requireAuth, requirePermission('expedition:update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = await ExpeditionService.updateExpedition(p(req.params.id), req.body, req.user);
     res.json(updated);
@@ -77,8 +78,8 @@ expeditionRouter.put('/:id', async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// Delete expedition
-expeditionRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
+// Delete expedition - STRICT ADMIN ONLY
+expeditionRouter.delete('/:id', requireAuth, requirePermission('expedition:delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const deleted = await ExpeditionService.deleteExpedition(p(req.params.id), req.user);
     res.json(deleted);

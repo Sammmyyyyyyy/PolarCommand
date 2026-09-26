@@ -1,4 +1,31 @@
-export type UserRole = 'ADMIN' | 'COMMANDER' | 'LOGISTICS_OFFICER' | 'STATION_MANAGER' | 'FIELD_MEMBER' | 'VIEWER';
+export type PrimaryRole = 'ADMIN' | 'STATION_MANAGER' | 'EXPEDITION_LEADER' | 'TEAM_MEMBER';
+export type UserRole = PrimaryRole | 'COMMANDER' | 'LOGISTICS_OFFICER' | 'FIELD_MEMBER' | 'VIEWER';
+
+export type Permission =
+  | 'expedition:create'
+  | 'expedition:read'
+  | 'expedition:update'
+  | 'expedition:delete'
+  | 'station:read'
+  | 'station:manage'
+  | 'inventory:read'
+  | 'inventory:manage'
+  | 'inventory:request_restock'
+  | 'cargo:read'
+  | 'cargo:create'
+  | 'cargo:manage'
+  | 'personnel:read'
+  | 'personnel:manage'
+  | 'equipment:read'
+  | 'equipment:assign'
+  | 'tracking:read'
+  | 'tracking:view_team'
+  | 'incident:create'
+  | 'incident:manage'
+  | 'simulation:run'
+  | 'user:manage'
+  | 'audit:read';
+
 export type Priority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'Critical' | 'High' | 'Medium' | 'Low';
 export type OperationalStatus = 'Normal' | 'Warning' | 'High Risk' | 'Critical' | 'Operational';
 export type ExpeditionLifecycle = 'DRAFT' | 'PLANNED' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED';
@@ -31,6 +58,8 @@ export interface User {
   organization?: Organization;
   assignedPersonnelId?: string | null;
   assignedPersonnel?: Personnel;
+  assignedExpeditionId?: string | null;
+  permissions?: Permission[];
   createdAt: string;
 }
 
@@ -86,6 +115,7 @@ export interface Station {
   openIncidentsCount?: number;
   stationRisk?: number;
   riskLevel?: string;
+  type?: string;
   image?: string;
 }
 
@@ -100,6 +130,7 @@ export interface CargoShipment {
   id: string;
   expeditionId: string;
   cargoCode: string;
+  trackingCode?: string;
   description: string;
   category: 'Medical' | 'Food' | 'Fuel' | 'Scientific' | 'Spare Parts' | 'Machinery' | 'Construction' | 'General';
   weightKg: number;
@@ -111,6 +142,7 @@ export interface CargoShipment {
   priority: Priority;
   departureDate: string;
   eta: string;
+  estimatedArrival?: string;
   originalEta?: string;
   delayHours: number;
   specialRequirements?: string;
@@ -144,21 +176,150 @@ export interface InventoryItem {
   expeditionId: string;
   stationId: string;
   station?: Station;
-  category: 'Medicine' | 'Medical' | 'Food' | 'Fuel' | 'Spare Parts' | 'Water' | 'Scientific';
+  category: 'Medicine' | 'Medical' | 'Food' | 'Fuel' | 'Spare Parts' | 'Water' | 'Scientific' | string;
   itemName: string;
   name?: string;
+  sku?: string;
   currentStock: number;
   unit: string;
   dailyUsage: number;
   safetyThresholdDays: number;
+  minThreshold?: number;
+  optimalStock?: number;
+  notes?: string;
   expiryDate?: string;
   replenishmentEta?: string;
   linkedCargoId?: string;
   linkedCargo?: CargoShipment;
   riskStatus: 'Normal' | 'Warning' | 'High Risk' | 'Critical';
+  inventoryStatus?: 'NORMAL' | 'LOW' | 'CRITICAL';
+  status?: 'NORMAL' | 'LOW' | 'CRITICAL' | string;
+  needsRestock?: boolean;
+  recommendedRestock?: number;
   daysOfSupply?: number;
   daysRemaining?: number;
   stockoutDate?: string;
+  activeRestockRequest?: RestockRequest | null;
+}
+
+export type RestockStatus = 'PENDING' | 'REVIEWED' | 'APPROVED' | 'CARGO_CREATED' | 'IN_TRANSIT' | 'FULFILLED' | 'REJECTED';
+
+export interface RestockRequest {
+  id: string;
+  stationId: string;
+  station?: Station;
+  itemId: string;
+  item?: InventoryItem;
+  requestedById?: string | null;
+  requestedByName: string;
+  requestedQuantity: number;
+  currentQuantity: number;
+  minimumQuantity: number;
+  priority: Priority;
+  status: RestockStatus;
+  notes?: string | null;
+  adminNotes?: string | null;
+  linkedCargoId?: string | null;
+  linkedCargo?: CargoShipment | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface MemberTracking {
+  id: string;
+  memberId: string;
+  personnelId?: string;
+  name: string;
+  role: string;
+  currentLocation: string;
+  assignedStation?: string | null;
+  latitude: number;
+  longitude: number;
+  batteryPercentage: number;
+  battery?: number;
+  deviceId: string;
+  trackingStatus: 'LIVE' | 'LAST_KNOWN' | 'OFFLINE';
+  lastUpdateText: string;
+  minutesSinceUpdate: number;
+  lastLocationUpdate?: string;
+  lastPingTime?: string;
+  checkInStatus?: string;
+  assignedAssets?: Asset[];
+  isSelf?: boolean;
+}
+
+export interface AdminGlobalSummary {
+  kpi: {
+    activeExpeditions: number;
+    totalExpeditions: number;
+    activeExpeditionsChange: string;
+    stationsCount: number;
+    totalPersonnel: number;
+    personnelChange: string;
+    activeEquipment: number;
+    totalEquipment: number;
+    equipmentChange: string;
+    antarcticaWeather: {
+      tempCelsius: number;
+      condition: string;
+      windSpeed: string;
+      humidity: string;
+    };
+  };
+  expeditionStatusDistribution: {
+    active: number;
+    planning: number;
+    completed: number;
+    onHold: number;
+  };
+  personnelDistribution: {
+    stationManagers: number;
+    expeditionLeaders: number;
+    teamMembers: number;
+    supportStaff: number;
+    total: number;
+  };
+  stations: Array<{
+    id: string;
+    name: string;
+    fullName: string;
+    code: string;
+    region: string;
+    latitude: number;
+    longitude: number;
+    status: string;
+    capacity: number;
+    personnelCount: number;
+    maxCapacity: number;
+    weatherTemp: number;
+    weatherCondition: string;
+  }>;
+  recentExpeditions: Array<{
+    id: string;
+    name: string;
+    leader: string;
+    status: string;
+    timeline: string;
+  }>;
+  criticalAlerts: Array<{
+    id: string;
+    title: string;
+    desc?: string;
+    impact?: string;
+    reason?: string;
+    time: string;
+    severity: string;
+    icon?: string;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    title: string;
+    desc: string;
+    time: string;
+    type: string;
+  }>;
+  pendingRestocks?: RestockRequest[];
 }
 
 export interface Asset {
@@ -166,6 +327,7 @@ export interface Asset {
   expeditionId: string;
   organizationId?: string;
   assetCode?: string;
+  assetTag?: string;
   name: string;
   type: 'Snow Vehicle' | 'Generator' | 'Crane' | 'Scientific Equipment' | 'Utility Machinery' | string;
   stationId: string;
@@ -184,6 +346,13 @@ export interface Asset {
   diagnosticNotes?: string;
   remainingHours?: number;
   maintenanceStatus?: string;
+  assignedPersonnelId?: string | null;
+  assignedPersonnel?: Personnel | null;
+  assignedUserId?: string | null;
+  assignedUser?: User | null;
+  assignedDate?: string | null;
+  serialNumber?: string | null;
+  batteryPercentage?: number;
 }
 
 export interface CheckInLog {
@@ -380,6 +549,11 @@ export interface Expedition {
   code: string;
   title: string;
   name?: string;
+  description?: string;
+  teamCount?: number;
+  overallRisk?: number;
+  startStationId?: string;
+  endStationId?: string;
   type: string;
   missionObjective?: string;
   commanderId?: string | null;

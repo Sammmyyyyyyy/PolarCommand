@@ -17,6 +17,7 @@ import {
   Compass,
 } from 'lucide-react';
 import { simulateCargoDelay, executeHeroAction, resetDemoState, updateTaskStatus, recordCheckIn, createIncident, triggerEmergencySos } from '../../services/api';
+import { PrimaryRole } from '../../types';
 import { useExpedition } from '../../context/ExpeditionContext';
 import { useAuth } from '../../context/AuthContext';
 import { CommandPalette } from '../common/CommandPalette';
@@ -46,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
     triggerRefresh,
   } = useExpedition();
 
-  const { currentUser, currentRole, switchRole, canExecuteActions } = useAuth();
+  const { currentUser, currentRole, quickSwitchRoleLogin, logout, canExecuteActions } = useAuth();
 
   const [isExpeditionDropdownOpen, setIsExpeditionDropdownOpen] = useState(false);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
@@ -368,29 +369,47 @@ export const Header: React.FC<HeaderProps> = ({
               {/* RBAC Role Switcher Dropdown */}
               {isRoleDropdownOpen && (
                 <div
-                  className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs animate-fadeIn"
+                  className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs animate-fadeIn"
                   onMouseLeave={() => setIsRoleDropdownOpen(false)}
                 >
                   <div className="px-3 py-1 font-bold text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-100">
-                    Switch Active RBAC Role
+                    Switch Authenticated Operational Role
                   </div>
-                  {roles.map((r) => (
+                  {[
+                    { role: 'ADMIN' as PrimaryRole, label: 'Admin (Mission Control)', path: '/dashboard' },
+                    { role: 'STATION_MANAGER' as PrimaryRole, label: 'Station Manager (Maitri)', path: '/station' },
+                    { role: 'EXPEDITION_LEADER' as PrimaryRole, label: 'Expedition Leader', path: '/expedition-leader' },
+                    { role: 'TEAM_MEMBER' as PrimaryRole, label: 'Team Member (Field)', path: '/member' },
+                  ].map((r) => (
                     <button
-                      key={r}
-                      onClick={() => {
-                        switchRole(r);
+                      key={r.role}
+                      onClick={async () => {
                         setIsRoleDropdownOpen(false);
+                        await quickSwitchRoleLogin(r.role);
+                        if (onNavigate) onNavigate(r.path);
                       }}
-                      className={`w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-slate-50 transition ${
-                        currentRole === r ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700'
+                      className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition ${
+                        currentRole === r.role ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700'
                       }`}
                     >
-                      <span>{r.replace('_', ' ')}</span>
-                      {currentRole === r && <UserCheck className="w-3.5 h-3.5 text-sky-600" />}
+                      <div>
+                        <div className="font-semibold">{r.label}</div>
+                        <div className="text-[10px] text-slate-400">{r.role}</div>
+                      </div>
+                      {currentRole === r.role && <UserCheck className="w-3.5 h-3.5 text-sky-600" />}
                     </button>
                   ))}
-                  <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 mt-1">
-                    Controls mutation & action permissions
+                  <div className="px-2 py-1.5 border-t border-slate-100 mt-1">
+                    <button
+                      onClick={() => {
+                        setIsRoleDropdownOpen(false);
+                        logout();
+                        if (onNavigate) onNavigate('/login');
+                      }}
+                      className="w-full text-left px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded transition"
+                    >
+                      Sign Out / Switch Account
+                    </button>
                   </div>
                 </div>
               )}
@@ -400,22 +419,39 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Hero Quick Control Ribbon */}
         <div className="bg-sky-50/70 text-slate-800 border-b border-sky-100 px-6 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
-          {currentRole === 'FIELD_MEMBER' ? (
+          {currentRole === 'TEAM_MEMBER' ? (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center space-x-2">
                 <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
-                  Field Member Mode
+                  Field Member Workspace
                 </span>
                 <span className="text-slate-600 font-medium text-[11px]">
                   Logged in as Field Member. High-level command actions are restricted to Commander/Admin.
                 </span>
               </div>
               <button
-                onClick={() => onNavigate && onNavigate('/field')}
+                onClick={() => onNavigate && onNavigate('/member')}
                 className="flex items-center space-x-1.5 px-3 py-1 bg-[#0284C7] hover:bg-sky-700 text-white rounded font-bold text-[11px] transition shadow-2xs"
               >
                 <Compass className="w-3.5 h-3.5" />
                 <span>Go to Field Member Workspace</span>
+              </button>
+            </div>
+          ) : currentRole === 'STATION_MANAGER' ? (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center space-x-2">
+                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
+                  Station Command Active
+                </span>
+                <span className="text-slate-600 font-medium text-[11px]">
+                  Managing station inventory, restock alerts, and expedition staging.
+                </span>
+              </div>
+              <button
+                onClick={() => onNavigate && onNavigate('/station')}
+                className="flex items-center space-x-1.5 px-3 py-1 bg-[#0284C7] hover:bg-sky-700 text-white rounded font-bold text-[11px] transition shadow-2xs"
+              >
+                <span>Go to Station Command Center</span>
               </button>
             </div>
           ) : (

@@ -594,11 +594,18 @@ export async function seedDemoData(): Promise<void> {
 
   // 10. Seed Check-In Records and Personnel Linkage
   const allPersonnel = await prisma.personnel.findMany({ where: { expeditionId } });
+  const assignedUserPersonnel = await prisma.user.findMany({
+    where: { assignedPersonnelId: { not: null } },
+    select: { assignedPersonnelId: true },
+  });
+  const takenPersonnelIds = new Set(assignedUserPersonnel.map((u) => u.assignedPersonnelId));
+  const freePersonnel = allPersonnel.find((p) => !takenPersonnelIds.has(p.id));
   const field1User = await prisma.user.findUnique({ where: { email: 'field1@polarcommand.org' } });
-  if (field1User && allPersonnel[0]) {
+
+  if (field1User && freePersonnel && !field1User.assignedPersonnelId) {
     await prisma.user.update({
       where: { id: field1User.id },
-      data: { assignedPersonnelId: allPersonnel.find((p) => p.role === 'Scientist')?.id || allPersonnel[0].id },
+      data: { assignedPersonnelId: freePersonnel.id },
     });
   }
 

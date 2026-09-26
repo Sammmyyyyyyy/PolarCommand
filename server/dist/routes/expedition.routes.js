@@ -19,6 +19,8 @@ import { WeatherService } from '../services/weather.service.js';
 import { ObservationService } from '../services/observation.service.js';
 import { DocumentService } from '../services/document.service.js';
 import { seedDemoData } from '../seed/demo-data.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
+import { requirePermission } from '../middleware/authorization.js';
 export const expeditionRouter = Router();
 const p = (v) => (Array.isArray(v) ? v[0] : String(v));
 // List all expeditions
@@ -42,8 +44,8 @@ expeditionRouter.post('/seed-demo', async (_req, res) => {
         res.status(500).json({ error: err.message || 'Failed to seed demo data' });
     }
 });
-// Create expedition
-expeditionRouter.post('/', async (req, res) => {
+// Create expedition - STRICT ADMIN ONLY
+expeditionRouter.post('/', requireAuth, requirePermission('expedition:create'), async (req, res) => {
     try {
         const expedition = await ExpeditionService.createExpedition(req.body, req.user);
         res.status(201).json(expedition);
@@ -65,7 +67,7 @@ expeditionRouter.get('/:id', async (req, res) => {
     }
 });
 // Update expedition
-expeditionRouter.put('/:id', async (req, res) => {
+expeditionRouter.put('/:id', requireAuth, requirePermission('expedition:update'), async (req, res) => {
     try {
         const updated = await ExpeditionService.updateExpedition(p(req.params.id), req.body, req.user);
         res.json(updated);
@@ -74,8 +76,8 @@ expeditionRouter.put('/:id', async (req, res) => {
         res.status(400).json({ error: err.message || 'Failed to update expedition' });
     }
 });
-// Delete expedition
-expeditionRouter.delete('/:id', async (req, res) => {
+// Delete expedition - STRICT ADMIN ONLY
+expeditionRouter.delete('/:id', requireAuth, requirePermission('expedition:delete'), async (req, res) => {
     try {
         const deleted = await ExpeditionService.deleteExpedition(p(req.params.id), req.user);
         res.json(deleted);

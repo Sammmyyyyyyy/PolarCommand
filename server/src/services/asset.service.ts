@@ -15,6 +15,8 @@ export class AssetService {
       where,
       include: {
         station: true,
+        assignedPersonnel: true,
+        assignedUser: { select: { id: true, name: true, email: true, role: true } },
         tasks: { where: { status: { in: ['ASSIGNED', 'IN_PROGRESS'] } } },
       },
       orderBy: { name: 'asc' },
@@ -41,6 +43,116 @@ export class AssetService {
     });
   }
 
+  public static async getAsset(id: string) {
+    const asset = await prisma.asset.findUnique({
+      where: { id },
+      include: {
+        station: true,
+        assignedPersonnel: true,
+        assignedUser: true,
+        tasks: true,
+      },
+    });
+    return asset;
+  }
+
+  /**
+   * Explicit equipment assignment for Expedition Leader
+   */
+  public static async assignEquipment(assetId: string, personnelId: string, user: any) {
+    const asset = await prisma.asset.findUnique({
+      where: { id: assetId },
+      include: { station: true },
+    });
+    if (!asset) throw new Error(`Equipment ${assetId} not found`);
+
+    const personnel = await prisma.personnel.findUnique({
+      where: { id: personnelId },
+      include: { assignedUserLink: true },
+    });
+    if (!personnel) throw new Error(`Personnel ${personnelId} not found`);
+
+    const updated = await prisma.asset.update({
+      where: { id: assetId },
+      data: {
+        assignedPersonnelId: personnel.id,
+        assignedUserId: personnel.assignedUserLink?.id || null,
+        assignedDate: new Date(),
+        lifecycleStatus: 'ASSIGNED',
+        status: asset.status === 'Unavailable' ? asset.status : 'Operational',
+      },
+      include: {
+        station: true,
+        assignedPersonnel: true,
+        assignedUser: true,
+      },
+    });
+
+    await AuditService.record({
+      expeditionId: asset.expeditionId,
+      userId: user?.id,
+      userName: user?.name,
+      userRole: user?.role,
+      action: 'ASSIGN_EQUIPMENT',
+      entity: 'Asset',
+      entityId: asset.id,
+      reason: `Assigned equipment ${asset.name} (${asset.assetCode}) to ${personnel.name} (${personnel.role})`,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Unassign equipment
+   */
+  public static async unassignEquipment(assetId: string, user: any) {
+    const asset = await prisma.asset.findUnique({
+      where: { id: assetId },
+      include: { assignedPersonnel: true },
+    });
+    if (!asset) throw new Error(`Equipment ${assetId} not found`);
+
+    const prevAssignee = asset.assignedPersonnel?.name || 'Unassigned';
+
+    const updated = await prisma.asset.update({
+      where: { id: assetId },
+      data: {
+        assignedPersonnelId: null,
+        assignedUserId: null,
+        assignedDate: null,
+        lifecycleStatus: 'AVAILABLE',
+      },
+      include: {
+        station: true,
+        assignedPersonnel: true,
+      },
+    });
+
+    await AuditService.record({
+      expeditionId: asset.expeditionId,
+      userId: user?.id,
+      userName: user?.name,
+      userRole: user?.role,
+      action: 'UNASSIGN_EQUIPMENT',
+      entity: 'Asset',
+      entityId: asset.id,
+      reason: `Unassigned equipment ${asset.name} (${asset.assetCode}) from ${prevAssignee}`,
+    });
+
+    return updated;
+  }
+
+  /**
+   * List equipment assigned to a specific personnel member (My Equipment)
+   */
+  public static async listEquipmentForPersonnel(personnelId: string) {
+    return prisma.asset.findMany({
+      where: { assignedPersonnelId: personnelId },
+      include: { station: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   public static async createAsset(expeditionId: string, data: any, user?: any) {
     const asset = await prisma.asset.create({
       data: {
@@ -48,7 +160,7 @@ export class AssetService {
         organizationId: data.organizationId || null,
         assetCode: data.assetCode || `AST-${Date.now().toString().slice(-4)}`,
         name: data.name,
-        type: data.type || 'Snow Vehicle',
+        type: data.type || 'Scientific Equipment',
         stationId: data.stationId,
         currentCondition: data.currentCondition || 'Good',
         operatingHours: Number(data.operatingHours) || 0,
@@ -60,6 +172,8 @@ export class AssetService {
         status: data.status || 'Operational',
         lifecycleStatus: data.lifecycleStatus || 'AVAILABLE',
         diagnosticNotes: data.diagnosticNotes || null,
+        serialNumber: data.serialNumber || null,
+        batteryPercentage: Number(data.batteryPercentage ?? 100),
       },
       include: { station: true },
     });
@@ -75,7 +189,7 @@ export class AssetService {
       action: 'CREATE_ASSET',
       entity: 'Asset',
       entityId: asset.id,
-      reason: `Registered new station equipment ${asset.name} (${asset.assetCode}) at ${asset.station.name}`,
+      reason: `Registered new equipment ${asset.name} (${asset.assetCode}) at ${asset.station.name}`,
     });
 
     return asset;
@@ -89,11 +203,12 @@ export class AssetService {
     if (data.operatingHours !== undefined) updateData.operatingHours = Number(data.operatingHours);
     if (data.maintenanceInterval !== undefined) updateData.maintenanceInterval = Number(data.maintenanceInterval);
     if (data.healthPercentage !== undefined) updateData.healthPercentage = Number(data.healthPercentage);
+    if (data.batteryPercentage !== undefined) updateData.batteryPercentage = Number(data.batteryPercentage);
 
     const updated = await prisma.asset.update({
       where: { id },
       data: updateData,
-      include: { station: true },
+      include: { station: true, assignedPersonnel: true },
     });
 
     await RiskService.calculateAndRecordExpeditionRisk(prev.expeditionId);
@@ -109,7 +224,7 @@ export class AssetService {
       entityId: id,
       previousState: prev.lifecycleStatus,
       newState: updated.lifecycleStatus,
-      reason: `Updated asset condition and parameters for ${updated.name}`,
+      reason: `Updated asset parameters for ${updated.name}`,
     });
 
     return updated;
@@ -155,7 +270,6 @@ export class AssetService {
       include: { station: true },
     });
 
-    // Resolve any linked maintenance alerts
     await prisma.alert.updateMany({
       where: {
         expeditionId: asset.expeditionId,
