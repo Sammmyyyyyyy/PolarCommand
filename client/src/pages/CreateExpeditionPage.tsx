@@ -544,7 +544,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Expedition Code / Operational ID *
+                  Mission Identifier / Call Sign *
                 </label>
                 <input
                   type="text"
@@ -850,7 +850,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
                       >
                         {stations.map((s, sIdx) => (
                           <option key={sIdx} value={sIdx}>
-                            Station {sIdx + 1}: {s.name} ({s.code})
+                            Station {sIdx + 1}: {s.name}
                           </option>
                         ))}
                       </select>
@@ -1156,7 +1156,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
                       >
                         {stations.map((s, sIdx) => (
                           <option key={sIdx} value={sIdx}>
-                            {s.code}
+                            {s.name}
                           </option>
                         ))}
                       </select>
@@ -1626,7 +1626,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
                 <div className="text-xs text-slate-700 space-y-1">
                   {stations.map((s, i) => (
                     <div key={i} className="flex justify-between">
-                      <span className="font-semibold">{s.name} ({s.code})</span>
+                      <span className="font-semibold">{s.name}</span>
                       <span className="text-slate-500">Cap: {s.capacity}</span>
                     </div>
                   ))}

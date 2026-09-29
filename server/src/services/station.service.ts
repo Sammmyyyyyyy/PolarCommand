@@ -1,10 +1,31 @@
 import { prisma } from '../config/database.js';
 import { AuditService } from './audit.service.js';
+import { ScopeService } from './scope.service.js';
 
 export class StationService {
-  public static async listStations(expeditionId?: string) {
+  public static async listStations(expeditionId?: string, user?: any) {
     const where: any = {};
-    if (expeditionId && expeditionId !== 'all') where.expeditionId = expeditionId;
+
+    if (user) {
+      const scope = await ScopeService.getUserScope(user);
+      if (scope.isStationManager) {
+        if (scope.stationIds.length > 0) {
+          where.id = { in: scope.stationIds };
+        } else if (scope.primaryStationId) {
+          where.id = scope.primaryStationId;
+        }
+      } else if (scope.isExpeditionLeader || scope.isTeamMember) {
+        where.OR = [
+          { id: { in: scope.stationIds } },
+          { expeditionId: { in: scope.expeditionIds } },
+        ];
+      }
+    }
+
+    if (expeditionId && expeditionId !== 'all') {
+      where.expeditionId = expeditionId;
+    }
+
     return prisma.station.findMany({
       where,
       include: {
@@ -22,9 +43,18 @@ export class StationService {
     });
   }
 
-  public static async getStation(id: string) {
-    return prisma.station.findUnique({
-      where: { id },
+  public static async getStation(idOrCode: string) {
+    const clean = idOrCode.replace(/^st-/, '');
+    return prisma.station.findFirst({
+      where: {
+        OR: [
+          { id: idOrCode },
+          { id: clean },
+          { code: idOrCode.toUpperCase() },
+          { code: clean.toUpperCase() },
+          { name: { contains: clean } },
+        ],
+      },
       include: {
         weather: { orderBy: { recordedAt: 'desc' }, take: 5 },
         personnel: true,

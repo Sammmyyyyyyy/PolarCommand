@@ -39,10 +39,10 @@ export const PolarMap: React.FC<PolarMapProps> = ({
         attributionControl: false,
       });
 
-      // Use CartoDB Positron (light, minimal, professional mission-control look)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      // Use OpenStreetMap for reliable public tiles without API-key watermarks
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap contributors',
       }).addTo(map);
 
       layerGroupRef.current = L.layerGroup().addTo(map);

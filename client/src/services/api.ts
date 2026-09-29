@@ -27,6 +27,7 @@ import {
   AdminGlobalSummary,
   RestockRequest,
   MemberTracking,
+  Notification,
 } from '../types';
 
 const API_BASE = '/api';
@@ -45,11 +46,37 @@ function getAuthHeaders(): HeadersInit {
 // -------------------------------------------------------------
 // Authentication
 // -------------------------------------------------------------
-export async function loginUser(email: string, password: string): Promise<{ token: string; user: User }> {
+export interface LoginPayload {
+  email?: string;
+  identifier?: string;
+  adminId?: string;
+  stationManagerId?: string;
+  expeditionLeaderId?: string;
+  memberId?: string;
+  logisticsCommanderId?: string;
+  password?: string;
+  role?: string;
+  stationName?: string;
+}
+
+export async function loginUser(
+  credentials: string | LoginPayload,
+  passwordParam?: string
+): Promise<{ token: string; user: User }> {
+  let body: any;
+  if (typeof credentials === 'string') {
+    body = { email: credentials, password: passwordParam };
+  } else {
+    body = { ...credentials };
+    if (passwordParam && !body.password) {
+      body.password = passwordParam;
+    }
+  }
+
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -57,7 +84,20 @@ export async function loginUser(email: string, password: string): Promise<{ toke
   }
   const data = await res.json();
   localStorage.setItem('polar_auth_token', data.token);
+  localStorage.setItem('polar_auth_user', JSON.stringify(data.user));
   return data;
+}
+
+export async function fetchPublicStations(): Promise<
+  Array<{ id: string; name: string; code: string; region?: string; status?: string }>
+> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/stations`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchCurrentUser(): Promise<{ user: User } | null> {
@@ -155,6 +195,12 @@ export async function fetchStations(expeditionId?: string): Promise<Station[]> {
   const url = expeditionId ? `${API_BASE}/expeditions/${expeditionId}/stations` : `${API_BASE}/stations`;
   const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch stations');
+  return res.json();
+}
+
+export async function fetchStationDetail(stationId: string): Promise<Station> {
+  const res = await fetch(`${API_BASE}/stations/${stationId}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch station ${stationId}`);
   return res.json();
 }
 
@@ -381,6 +427,16 @@ export async function fetchPersonnel(expeditionId: string, role?: string, status
   return res.json();
 }
 
+export async function fetchAllPersonnel(role?: string, status?: string): Promise<Personnel[]> {
+  const params = new URLSearchParams();
+  if (role && role !== 'All') params.append('role', role);
+  if (status && status !== 'All') params.append('status', status);
+  const url = `${API_BASE}/personnel?${params.toString()}`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch personnel');
+  return res.json();
+}
+
 export async function createPersonnel(expeditionId: string, data: any): Promise<Personnel> {
   const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/personnel`, {
     method: 'POST',
@@ -500,6 +556,29 @@ export async function dispatchIncidentResponse(expeditionId: string, id: string,
 export async function fetchAlerts(expeditionId: string): Promise<Alert[]> {
   const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/alerts`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch alerts');
+  return res.json();
+}
+
+export async function createAlert(data: {
+  expeditionId?: string;
+  stationId?: string;
+  type?: string;
+  severity?: string;
+  title: string;
+  source?: string;
+  affectedEntity?: string;
+  reason?: string;
+  impact?: string;
+  recommendedAction?: string;
+  status?: string;
+  recipients?: string[];
+}): Promise<Alert> {
+  const res = await fetch(`${API_BASE}/alerts`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create alert');
   return res.json();
 }
 
@@ -1165,6 +1244,87 @@ export async function reportEmergency(data: {
 
 export const reportEmergencyIncident = reportEmergency;
 
+// -------------------------------------------------------------
+// Restock Requests / Operational Requirements Updates
+// -------------------------------------------------------------
+export async function updateRestockRequest(
+  id: string,
+  data: { status?: string; adminNotes?: string; priority?: string; requestedQuantity?: number }
+): Promise<RestockRequest> {
+  const res = await fetch(`${API_BASE}/restock-requests/${id}`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update restock request');
+  }
+  return res.json();
+}
 
+export const createStationRestockRequest = requestInventoryRestock;
+export const fulfillRestockRequestWithCargo = fulfillRestockWithCargo;
 
+export async function createOperationalRequirement(data: {
+  stationId?: string;
+  expeditionId?: string;
+  itemId?: string;
+  itemName: string;
+  category: string;
+  requestedQuantity: number;
+  unit?: string;
+  priority?: string;
+  notes?: string;
+}): Promise<RestockRequest> {
+  const res = await fetch(`${API_BASE}/restock-requests`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to submit operational supply requirement');
+  }
+  return res.json();
+}
 
+// -------------------------------------------------------------
+// Persistent Per-User Notifications
+// -------------------------------------------------------------
+export async function fetchNotifications(): Promise<Notification[]> {
+  const res = await fetch(`${API_BASE}/notifications`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchUnreadNotificationCount(): Promise<number> {
+  try {
+    const res = await fetch(`${API_BASE}/notifications/unread-count`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Number(data.count) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function markNotificationAsRead(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/notifications/${id}/read`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+  });
+  return res.ok;
+}
+
+export async function markAllNotificationsAsRead(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/notifications/mark-all-read`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  return res.ok;
+}

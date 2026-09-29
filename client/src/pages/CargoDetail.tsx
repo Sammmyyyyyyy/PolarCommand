@@ -110,7 +110,7 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                {cargo.id}
+                {cargo.description}
               </h1>
               <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[11px] font-extrabold tracking-wider uppercase">
                 {cargo.priority}
@@ -121,7 +121,7 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">{cargo.description}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{cargo.category} Consignment • {cargo.transportMode} • {cargo.origin} ➔ {cargo.destination}</p>
           </div>
         </div>
 
@@ -429,7 +429,7 @@ export const CargoDetail: React.FC<CargoDetailProps> = ({
             <form onSubmit={handleReceiveCargo} className="space-y-4 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cargo Item</div>
-                <div className="font-bold text-slate-900">{cargo.id} — {cargo.description}</div>
+                <div className="font-bold text-slate-900">{cargo.description}</div>
                 <div className="text-[11px] text-slate-600 flex justify-between pt-1">
                   <span>Destination: <strong>{cargo.destination}</strong></span>
                   <span>Manifest Expected: <strong>{cargo.quantity} units ({cargo.weightKg} kg)</strong></span>

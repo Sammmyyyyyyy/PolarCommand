@@ -153,7 +153,7 @@ export const CargoTracking: React.FC<CargoTrackingProps> = ({
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             End-to-end maritime and aviation transit tracking for{' '}
-            <strong className="text-slate-800">{currentExpedition?.code || 'Active Expedition'}</strong>
+            <strong className="text-slate-800">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</strong>
           </p>
         </div>
 
@@ -206,8 +206,7 @@ export const CargoTracking: React.FC<CargoTrackingProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <th className="py-3 px-4">Shipment ID</th>
-                <th className="py-3 px-4">Consignment Description</th>
+                <th className="py-3 px-4">Consignment</th>
                 <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">Priority</th>
                 <th className="py-3 px-4">Origin ➔ Dest</th>
@@ -220,7 +219,7 @@ export const CargoTracking: React.FC<CargoTrackingProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredCargo.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     No cargo shipments found matching current criteria.
                   </td>
@@ -237,11 +236,11 @@ export const CargoTracking: React.FC<CargoTrackingProps> = ({
                       onClick={() => onSelectCargo(item.id)}
                       className="hover:bg-sky-50/50 transition cursor-pointer group"
                     >
-                      <td className="py-3.5 px-4 font-mono font-bold text-sky-700">
-                        {item.id}
-                      </td>
-                      <td className="py-3.5 px-4 font-medium text-slate-800 max-w-xs truncate">
-                        {item.description}
+                      <td className="py-3.5 px-4 font-bold text-slate-900 max-w-xs">
+                        <div className="truncate">{item.description}</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {item.weightKg ? `${item.weightKg.toLocaleString()} kg` : ''} • {item.transportMode}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium">

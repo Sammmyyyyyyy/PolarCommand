@@ -1,9 +1,24 @@
 import { prisma } from '../config/database.js';
 import { AuditService } from './audit.service.js';
+import { ScopeService } from './scope.service.js';
 
 export class PersonnelService {
-  public static async listPersonnel(expeditionId: string, role?: string, status?: string) {
-    const where: any = { expeditionId };
+  public static async listPersonnel(expeditionId?: string, role?: string, status?: string, user?: any) {
+    const where: any = {};
+
+    if (user) {
+      const scope = await ScopeService.getUserScope(user);
+      if (scope.isStationManager) {
+        where.assignedStationId = { in: scope.stationIds };
+      } else if (scope.isExpeditionLeader || scope.isTeamMember) {
+        where.expeditionId = { in: scope.expeditionIds };
+      } else if (expeditionId && expeditionId !== 'all') {
+        where.expeditionId = expeditionId;
+      }
+    } else if (expeditionId && expeditionId !== 'all') {
+      where.expeditionId = expeditionId;
+    }
+
     if (role && role !== 'All') where.role = role;
     if (status && status !== 'All') where.status = status;
 

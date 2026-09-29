@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { useAuth } from '../../context/AuthContext';
 
 interface AppLayoutProps {
   currentPath: string;
@@ -15,20 +16,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   currentPath,
   onNavigate,
   onRefreshData,
-  activeAlertCount = 4,
+  activeAlertCount = 0,
   expeditionRisk = 38,
   children,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const { currentRole } = useAuth();
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden text-slate-900 font-sans">
+    <div className={`flex h-screen bg-[#F8FAFC] overflow-hidden text-slate-900 font-sans ${currentRole === 'ADMIN' ? 'admin-shell' : ''}`}>
       {/* Persistent Left Sidebar */}
       <Sidebar
         currentPath={currentPath}
         onNavigate={onNavigate}
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(!collapsed)}
+        activeAlertCount={activeAlertCount}
       />
 
       {/* Main Mission Control Content Area */}

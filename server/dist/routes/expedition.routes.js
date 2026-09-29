@@ -24,9 +24,9 @@ import { requirePermission } from '../middleware/authorization.js';
 export const expeditionRouter = Router();
 const p = (v) => (Array.isArray(v) ? v[0] : String(v));
 // List all expeditions
-expeditionRouter.get('/', async (_req, res) => {
+expeditionRouter.get('/', async (req, res) => {
     try {
-        const list = await ExpeditionService.listExpeditions();
+        const list = await ExpeditionService.listExpeditions(undefined, req.user);
         res.json(list);
     }
     catch (err) {
@@ -295,7 +295,7 @@ expeditionRouter.delete('/:id/assets/:assetId', async (req, res) => {
 });
 expeditionRouter.post('/:id/assets/:assetId/maintenance', async (req, res) => {
     try {
-        const updated = await AssetService.recordMaintenance(p(req.params.assetId), req.user);
+        const updated = await AssetService.recordMaintenance(p(req.params.assetId), req.body?.notes, req.user);
         res.json(updated);
     }
     catch (err) {

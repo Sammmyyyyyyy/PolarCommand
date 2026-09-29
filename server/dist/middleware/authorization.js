@@ -8,6 +8,8 @@ export function normalizeRole(rawRole) {
         return 'STATION_MANAGER';
     if (upper === 'EXPEDITION_LEADER' || upper === 'COMMANDER' || upper === 'LEADER')
         return 'EXPEDITION_LEADER';
+    if (upper === 'LOGISTICS_COMMANDER' || upper === 'LOGISTICS_OFFICER' || upper === 'LOGISTICS')
+        return 'LOGISTICS_COMMANDER';
     if (upper === 'TEAM_MEMBER' || upper === 'FIELD_MEMBER' || upper === 'MEMBER' || upper === 'VIEWER')
         return 'TEAM_MEMBER';
     return 'TEAM_MEMBER';
@@ -36,6 +38,20 @@ export const ROLE_PERMISSIONS = {
         'incident:manage',
         'simulation:run',
         'user:manage',
+        'audit:read',
+    ],
+    LOGISTICS_COMMANDER: [
+        'expedition:read',
+        'station:read',
+        'inventory:read',
+        'inventory:manage',
+        'inventory:request_restock',
+        'cargo:read',
+        'cargo:create',
+        'cargo:manage',
+        'equipment:read',
+        'tracking:read',
+        'simulation:run',
         'audit:read',
     ],
     STATION_MANAGER: [

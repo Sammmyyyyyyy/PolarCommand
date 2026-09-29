@@ -1,4 +1,4 @@
-export type PrimaryRole = 'ADMIN' | 'STATION_MANAGER' | 'EXPEDITION_LEADER' | 'TEAM_MEMBER';
+export type PrimaryRole = 'ADMIN' | 'STATION_MANAGER' | 'EXPEDITION_LEADER' | 'TEAM_MEMBER' | 'LOGISTICS_COMMANDER';
 export type UserRole = PrimaryRole | 'COMMANDER' | 'LOGISTICS_OFFICER' | 'FIELD_MEMBER' | 'VIEWER';
 
 export type Permission =
@@ -54,13 +54,34 @@ export interface User {
   name: string;
   role: UserRole;
   stationId?: string | null;
+  stationIds?: string[];
+  stationIdsJson?: string | null;
   organizationId?: string | null;
   organization?: Organization;
   assignedPersonnelId?: string | null;
   assignedPersonnel?: Personnel;
   assignedExpeditionId?: string | null;
+  expeditionIds?: string[];
+  expeditionIdsJson?: string | null;
+  teamLeaderId?: string | null;
+  status?: string;
   permissions?: Permission[];
+  scope?: any;
   createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  alertId?: string | null;
+  title: string;
+  message: string;
+  type: string;
+  severity: string;
+  isRead: boolean;
+  link?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WeatherSnapshot {
@@ -106,6 +127,12 @@ export interface Station {
   capacity: number;
   currentRisk: number;
   connectivityStatus?: string;
+  location?: string | null;
+  managerId?: string | null;
+  personnelIds?: string[];
+  personnelIdsJson?: string | null;
+  expeditionIds?: string[];
+  expeditionIdsJson?: string | null;
   weather?: any;
   personnelCount?: number;
   personnelPresent?: number;
@@ -260,6 +287,8 @@ export interface AdminGlobalSummary {
     activeEquipment: number;
     totalEquipment: number;
     equipmentChange: string;
+    pendingRequirements: number;
+    ongoingShipments: number;
     antarcticaWeather: {
       tempCelsius: number;
       condition: string;
@@ -505,8 +534,13 @@ export interface Incident {
 export interface Alert {
   id: string;
   expeditionId: string;
+  stationId?: string | null;
+  personnelId?: string | null;
+  shipmentId?: string | null;
+  type?: string | null;
   severity: Priority;
   title: string;
+  message?: string | null;
   source?: string;
   affectedEntity: string;
   reason?: string;
@@ -514,6 +548,8 @@ export interface Alert {
   recommendedAction: string;
   status: 'ACTIVE' | 'ACKNOWLEDGED' | 'IN_PROGRESS' | 'RESOLVED' | 'DISMISSED' | 'New' | 'Acknowledged' | 'In Progress' | 'Resolved';
   actions?: ActionItem[];
+  recipientsJson?: string | null;
+  createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
   timestamp?: string;
@@ -535,6 +571,34 @@ export interface ActionItem {
   createdAt?: string;
   executedAt?: string;
   executionPayloadJson?: string;
+}
+
+export interface ExpeditionRouteStep {
+  id: string;
+  name: string;
+  type: 'station' | 'transit' | 'research' | 'return' | 'berth' | 'depot' | string;
+  status: 'completed' | 'current' | 'upcoming';
+  latitude?: number;
+  longitude?: number;
+  description?: string;
+  etaOrDate?: string;
+}
+
+export interface ExpeditionTrackingInfo {
+  currentRouteStepId?: string;
+  currentRouteStep?: string;
+  trackingStatus: 'active' | 'caution' | 'warning' | 'standby' | 'completed' | string;
+  currentLocation: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    elevationMeters?: number;
+  };
+  lastUpdated: string;
+  speedKnots?: number;
+  headingDegrees?: number;
+  temperatureCelsius?: number;
+  weatherCondition?: string;
 }
 
 export interface ExpeditionMilestone {
@@ -559,6 +623,11 @@ export interface Expedition {
   commanderId?: string | null;
   commander?: User | null;
   commanderName?: string;
+  leaderId?: string | null;
+  stationIds?: string[];
+  stationIdsJson?: string | null;
+  memberIds?: string[];
+  memberIdsJson?: string | null;
   organizationId?: string | null;
   organization?: Organization;
   status: 'PLANNING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED' | 'Active' | 'Planning' | 'Completed';
@@ -588,12 +657,29 @@ export interface Expedition {
     incidents: number;
     alerts: number;
     movements?: number;
+    stations?: number;
   };
   objectives?: string[];
   milestones?: ExpeditionMilestone[];
   personnelCount?: number;
   totalCargoCount?: number;
   activeAlertsCount?: number;
+  // Route and Live Tracking data (Per-Expedition Data-Driven Model)
+  route?: ExpeditionRouteStep[];
+  tracking?: ExpeditionTrackingInfo;
+  currentRouteStep?: string;
+  trackingStatus?: string;
+  currentLocation?: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    elevationMeters?: number;
+  };
+  lastUpdated?: string;
+  cargoShipments?: CargoShipment[];
+  keyAssets?: Asset[];
+  assignedStations?: Station[];
+  alerts?: Alert[];
 }
 
 export interface DashboardSummary {

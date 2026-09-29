@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { Asset } from '../types';
 import { createAsset, recordAssetMaintenance, deleteAsset } from '../services/api';
-import { useExpedition } from '../context/ExpeditionContext';
 import { useAuth } from '../context/AuthContext';
+import { useExpedition } from '../context/ExpeditionContext';
+import { getUserScope } from '../utils/userScope';
 import { Modal } from '../components/common/Modal';
 
 interface AssetManagementProps {
@@ -29,11 +30,16 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
   onRefreshData,
 }) => {
   const { currentExpeditionId, currentExpedition, dashboard, triggerRefresh } = useExpedition();
-  const { canEditOperationalData } = useAuth();
+  const { currentUser, isStationManager, canEditOperationalData } = useAuth();
+  const scope = getUserScope(currentUser);
 
   const [selectedType, setSelectedType] = useState<string>('All');
   const [selectedStation, setSelectedStation] = useState<string>('All');
   const [inspectingAsset, setInspectingAsset] = useState<Asset | null>(null);
+
+  // Success and Error Banners
+  const [assetSuccessBanner, setAssetSuccessBanner] = useState<string | null>(null);
+  const [assetErrorBanner, setAssetErrorBanner] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,14 +48,14 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
     id: '',
     name: '',
     type: 'Snow Vehicle',
-    stationId: 'bharati',
+    stationId: scope.primaryStationId || 'bharati',
     operatingHours: 120,
     maintenanceInterval: 500,
     fuelConsumptionPerHour: 18,
     status: 'Operational',
   });
 
-  const availableStations = dashboard?.stationsSummary && dashboard.stationsSummary.length > 0
+  const availableStations: { id: string; name: string }[] = dashboard?.stationsSummary && dashboard.stationsSummary.length > 0
     ? dashboard.stationsSummary
     : [
         { id: 'bharati', name: 'Bharati Station' },
@@ -68,19 +74,26 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
   const handleCreateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentExpeditionId) return;
+    setAssetErrorBanner(null);
+    setAssetSuccessBanner(null);
     try {
       setIsSubmitting(true);
+      const targetStationId = isStationManager
+        ? (scope.primaryStationId || currentUser?.stationId || 'bharati')
+        : formData.stationId;
+
       await createAsset(currentExpeditionId, {
         id: formData.id || undefined,
         name: formData.name,
         type: formData.type,
-        stationId: formData.stationId,
+        stationId: targetStationId,
         operatingHours: Number(formData.operatingHours),
         maintenanceInterval: Number(formData.maintenanceInterval),
         fuelConsumptionPerHour: Number(formData.fuelConsumptionPerHour),
         status: formData.status,
       });
       setIsModalOpen(false);
+      setAssetSuccessBanner(`✓ Asset "${formData.name}" successfully registered at station.`);
       setFormData({
         id: '',
         name: '',
@@ -93,8 +106,10 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
       });
       triggerRefresh();
       if (onRefreshData) onRefreshData();
+      setTimeout(() => setAssetSuccessBanner(null), 5000);
     } catch (err: any) {
-      alert(err.message || 'Failed to register asset');
+      console.error('[Asset Creation Error]', err);
+      setAssetErrorBanner(err.message || 'Failed to register asset');
     } finally {
       setIsSubmitting(false);
     }
@@ -125,9 +140,12 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
     }
   };
 
-  const filteredAssets = assetsList.filter((a) => {
+  const scopedAssets = isStationManager ? scope.filterAssets(assetsList) : assetsList;
+
+  const filteredAssets = scopedAssets.filter((a) => {
     const matchesType = selectedType === 'All' || a.type.toLowerCase() === selectedType.toLowerCase();
     const matchesStation =
+      isStationManager ||
       selectedStation === 'All' ||
       a.stationId.toLowerCase() === selectedStation.toLowerCase() ||
       (a.station && a.station.id.toLowerCase() === selectedStation.toLowerCase());
@@ -135,35 +153,38 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
     return matchesType && matchesStation;
   });
 
-  const operationalCount = assetsList.filter((a) => a.status === 'Operational').length;
-  const maintenanceDueCount = assetsList.filter(
+  const operationalCount = scopedAssets.filter((a) => a.status === 'Operational').length;
+  const maintenanceDueCount = scopedAssets.filter(
     (a) => a.maintenanceInterval - a.operatingHours <= 0 || a.status === 'Maintenance'
   ).length;
+  const criticalCount = scopedAssets.filter((a) => a.status === 'Critical' || (a.healthScore ?? 100) < 50).length;
+  const avgHealth = scopedAssets.length > 0
+    ? Math.round(scopedAssets.reduce((acc, a) => acc + (a.healthScore ?? 100), 0) / scopedAssets.length)
+    : 100;
 
   return (
     <div className="space-y-6">
-      {/* Top Header matching Screen 6 */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
         <div>
           <div className="flex items-center space-x-2">
             <Truck className="w-5 h-5 text-sky-600" />
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Asset Management & Equipment Health
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              Equipment & Fleet Operations
             </h1>
-            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-bold border border-sky-200 font-mono">
+            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-medium border border-sky-200 font-mono">
               {assetsList.length} Station Assets
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Fleet tracking for snow vehicles, prime diesel generators, cranes, and scientific radar stations for{' '}
-            <strong className="text-slate-800">{currentExpedition?.code || 'Active Expedition'}</strong>
+          <p className="text-xs text-slate-500 mt-1">
+            Operational status, running hours, and proactive maintenance tracking across polar stations and traverse units.
           </p>
         </div>
 
         {canEditOperationalData && (
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs transition"
           >
             <Plus className="w-4 h-4" />
             <span>Add Asset</span>
@@ -171,18 +192,47 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
         )}
       </div>
 
+      {/* Operational Metric Summary Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Total Fleet Assets</div>
+          <div className="text-xl font-bold text-slate-900 mt-0.5">{assetsList.length}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Tracked units</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Operational Status</div>
+          <div className="text-xl font-bold text-emerald-600 mt-0.5">{operationalCount}</div>
+          <div className="text-[11px] text-emerald-600/80 mt-0.5">Nominal service</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Maintenance Due</div>
+          <div className={`text-xl font-bold mt-0.5 ${maintenanceDueCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+            {maintenanceDueCount}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Threshold reached</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Fleet Health Index</div>
+          <div className="text-xl font-bold text-sky-700 mt-0.5">{avgHealth}%</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Average condition</div>
+        </div>
+      </div>
+
       {/* Filter and Dropdowns Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
         {/* Type Pills */}
-        <div className="flex items-center space-x-1 overflow-x-auto text-xs py-1">
+        <div className="flex items-center space-x-1 overflow-x-auto text-xs py-0.5">
           {types.map((t) => (
             <button
               key={t}
               onClick={() => setSelectedType(t)}
-              className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition ${
+              className={`px-3 py-1 rounded-lg text-xs transition ${
                 selectedType === t
-                  ? 'bg-sky-600 text-white font-bold shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-sky-600 text-white font-semibold shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 font-medium'
               }`}
             >
               {t}
@@ -192,11 +242,11 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
 
         {/* Station filter dropdown */}
         <div className="flex items-center space-x-2 text-xs">
-          <span className="text-slate-400 font-medium">Station:</span>
+          <span className="text-slate-500 font-medium">Station:</span>
           <select
             value={selectedStation}
             onChange={(e) => setSelectedStation(e.target.value)}
-            className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md font-semibold text-slate-700 focus:outline-hidden"
+            className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md font-medium text-slate-700 focus:outline-hidden text-xs"
           >
             <option value="All">All Stations</option>
             {availableStations.map((st) => (
@@ -214,9 +264,8 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <th className="py-3 px-4">Asset ID</th>
-                <th className="py-3 px-4">Equipment Name</th>
-                <th className="py-3 px-4">Type</th>
+                <th className="py-3 px-4">Equipment</th>
+                <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">Station Base</th>
                 <th className="py-3 px-4">Operating Hours</th>
                 <th className="py-3 px-4">Health Index</th>
@@ -228,7 +277,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredAssets.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Truck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     No assets found. Click "+ Add Asset" above to register vehicles or generators.
                   </td>
@@ -245,15 +294,19 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
                       onClick={() => setInspectingAsset(asset)}
                       className="hover:bg-sky-50/40 transition cursor-pointer group"
                     >
-                      <td className="py-3.5 px-4 font-mono font-bold text-sky-700">
-                        {asset.id}
+                      <td className="py-3.5 px-4 font-semibold text-slate-900">
+                        <div>{asset.name}</div>
+                        <div className="text-[11px] text-slate-400 font-normal">{asset.type}</div>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900">{asset.name}</td>
-                      <td className="py-3.5 px-4 text-slate-600 font-medium">{asset.type}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-medium">
+                          {asset.type}
+                        </span>
+                      </td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {asset.station?.name || asset.stationId}
+                        {asset.station?.name || (asset.stationId ? asset.stationId.charAt(0).toUpperCase() + asset.stationId.slice(1) + ' Station' : 'Active Base')}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-800">
+                      <td className="py-3.5 px-4 font-mono text-slate-700">
                         {asset.operatingHours}h / {asset.maintenanceInterval}h
                       </td>
                       <td className="py-3.5 px-4">
@@ -270,19 +323,19 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
                               style={{ width: `${asset.healthScore ?? 100}%` }}
                             ></div>
                           </div>
-                          <span className="font-mono font-bold text-[11px] text-slate-700">
+                          <span className="font-mono font-medium text-[11px] text-slate-700">
                             {asset.healthScore ?? 100}%
                           </span>
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
                         {isMaintenanceDue ? (
-                          <span className="text-rose-600 font-bold flex items-center space-x-1">
+                          <span className="text-rose-600 font-semibold flex items-center space-x-1">
                             <AlertTriangle className="w-3.5 h-3.5" />
                             <span>Overdue ({Math.abs(hoursUntilService)}h)</span>
                           </span>
                         ) : isMaintenanceWarning ? (
-                          <span className="text-amber-600 font-semibold flex items-center space-x-1">
+                          <span className="text-amber-600 font-medium flex items-center space-x-1">
                             <Clock className="w-3.5 h-3.5" />
                             <span>Due in {hoursUntilService}h</span>
                           </span>
@@ -292,7 +345,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
                       </td>
                       <td className="py-3.5 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
                             asset.status === 'Operational'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : asset.status === 'Maintenance'
@@ -308,7 +361,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
                           <button
                             onClick={(e) => handleMaintenance(asset.id, e)}
                             title="Record Service / Reset Maintenance Window"
-                            className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-semibold text-[11px] transition inline-flex items-center space-x-1"
+                            className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded font-medium text-[11px] transition inline-flex items-center space-x-1"
                           >
                             <Wrench className="w-3 h-3" />
                             <span>Service</span>
@@ -344,7 +397,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
         <form onSubmit={handleCreateAsset} className="space-y-4 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Asset Code / ID</label>
+              <label className="block text-slate-700 font-medium mb-1">Asset Code / ID</label>
               <input
                 type="text"
                 placeholder="e.g. PB-05 or GEN-03"
@@ -354,7 +407,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
               />
             </div>
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Type</label>
+              <label className="block text-slate-700 font-medium mb-1">Type</label>
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
@@ -370,7 +423,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold mb-1">Asset / Model Name</label>
+            <label className="block text-slate-700 font-medium mb-1">Asset / Model Name</label>
             <input
               type="text"
               required
@@ -383,7 +436,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Station Base</label>
+              <label className="block text-slate-700 font-medium mb-1">Station Base</label>
               <select
                 value={formData.stationId}
                 onChange={(e) => setFormData({ ...formData, stationId: e.target.value })}
@@ -397,7 +450,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Operational Status</label>
+              <label className="block text-slate-700 font-medium mb-1">Operational Status</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -412,7 +465,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Current Hours</label>
+              <label className="block text-slate-700 font-medium mb-1">Current Hours</label>
               <input
                 type="number"
                 required
@@ -423,7 +476,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
               />
             </div>
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Service Interval (h)</label>
+              <label className="block text-slate-700 font-medium mb-1">Service Interval (h)</label>
               <input
                 type="number"
                 required
@@ -434,7 +487,7 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
               />
             </div>
             <div>
-              <label className="block text-slate-700 font-bold mb-1">Fuel (L/h)</label>
+              <label className="block text-slate-700 font-medium mb-1">Fuel (L/h)</label>
               <input
                 type="number"
                 required
@@ -450,14 +503,14 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="px-3.5 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"
+              className="px-3.5 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium text-xs"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-bold shadow-xs transition disabled:opacity-50"
+              className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-xs shadow-xs transition disabled:opacity-50"
             >
               {isSubmitting ? 'Registering...' : 'Register Asset'}
             </button>
@@ -470,38 +523,38 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
         <Modal
           isOpen={true}
           onClose={() => setInspectingAsset(null)}
-          title={`Asset Inspection: ${inspectingAsset.name} (${inspectingAsset.id})`}
+          title={`Equipment Health: ${inspectingAsset.name}`}
           maxWidth="max-w-lg"
         >
           <div className="space-y-4 text-xs">
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 grid grid-cols-2 gap-3">
               <div>
                 <span className="text-slate-400 font-medium block">Station Location</span>
-                <span className="font-bold text-slate-800 text-sm">
+                <span className="font-semibold text-slate-800 text-sm">
                   {inspectingAsset.station?.name || inspectingAsset.stationId}
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 font-medium block">Health Index</span>
-                <span className="font-bold text-emerald-600 text-sm">{inspectingAsset.healthScore}%</span>
+                <span className="font-semibold text-emerald-600 text-sm">{inspectingAsset.healthScore}%</span>
               </div>
               <div>
                 <span className="text-slate-400 font-medium block">Fuel Consumption</span>
-                <span className="font-mono font-bold text-slate-800">
+                <span className="font-mono font-medium text-slate-800">
                   {inspectingAsset.fuelConsumptionPerHour} Litres/hr
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 font-medium block">Operating Hours</span>
-                <span className="font-mono font-bold text-slate-800">
+                <span className="font-mono font-medium text-slate-800">
                   {inspectingAsset.operatingHours}h (Interval: {inspectingAsset.maintenanceInterval}h)
                 </span>
               </div>
             </div>
 
             <div className="border-t border-slate-100 pt-3">
-              <h4 className="font-bold text-slate-800 mb-2">Autonomous Maintenance Rule</h4>
-              <p className="text-slate-500 leading-relaxed">
+              <h4 className="font-semibold text-slate-800 mb-1">Autonomous Maintenance Rule</h4>
+              <p className="text-slate-500 leading-relaxed text-xs">
                 When equipment operating hours exceed interval thresholds under sub-zero conditions (-35°C), failure
                 probabilities increase exponentially. Scheduling proactive maintenance resets system risk factors.
               </p>
@@ -514,14 +567,14 @@ export const AssetManagement: React.FC<AssetManagementProps> = ({
                     handleMaintenance(inspectingAsset.id, e);
                     setInspectingAsset(null);
                   }}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-xs transition"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-xs transition"
                 >
                   Record Overhaul / Reset Hours
                 </button>
               )}
               <button
                 onClick={() => setInspectingAsset(null)}
-                className="px-3.5 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"
+                className="px-3.5 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium text-xs"
               >
                 Close
               </button>

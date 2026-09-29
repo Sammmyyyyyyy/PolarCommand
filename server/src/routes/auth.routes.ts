@@ -5,17 +5,41 @@ import { authenticateJWT, requireAuth, AuthenticatedRequest } from '../middlewar
 export const authRouter = Router();
 
 authRouter.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  const {
+    email,
+    password,
+    identifier,
+    adminId,
+    stationManagerId,
+    expeditionLeaderId,
+    memberId,
+    logisticsCommanderId,
+    role,
+    stationName,
+  } = req.body;
+
+  const resolvedIdentifier =
+    identifier || adminId || stationManagerId || expeditionLeaderId || memberId || logisticsCommanderId || email;
+
+  if (!resolvedIdentifier || !password) {
+    return res.status(400).json({ error: 'Identification and password are required' });
   }
 
-  const result = await AuthService.authenticate(email, password);
+  const result = await AuthService.authenticate(resolvedIdentifier, password, role, stationName);
   if (!result) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: 'Invalid mission credentials or password' });
   }
 
   return res.json(result);
+});
+
+authRouter.get('/stations', async (_req, res) => {
+  try {
+    const stations = await AuthService.listPublicStations();
+    return res.json(stations);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to list stations' });
+  }
 });
 
 authRouter.get('/me', authenticateJWT, requireAuth, (req: AuthenticatedRequest, res: Response) => {

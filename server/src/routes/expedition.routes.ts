@@ -27,9 +27,9 @@ export const expeditionRouter = Router();
 const p = (v: any): string => (Array.isArray(v) ? v[0] : String(v));
 
 // List all expeditions
-expeditionRouter.get('/', async (_req: Request, res: Response) => {
+expeditionRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const list = await ExpeditionService.listExpeditions();
+    const list = await ExpeditionService.listExpeditions(undefined, (req as any).user);
     res.json(list);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to list expeditions' });
@@ -296,7 +296,7 @@ expeditionRouter.delete('/:id/assets/:assetId', async (req: AuthenticatedRequest
 
 expeditionRouter.post('/:id/assets/:assetId/maintenance', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const updated = await AssetService.recordMaintenance(p(req.params.assetId), req.user);
+    const updated = await AssetService.recordMaintenance(p(req.params.assetId), req.body?.notes, req.user);
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

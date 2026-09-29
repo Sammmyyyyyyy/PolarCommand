@@ -116,20 +116,26 @@ export class IncidentService {
       },
     });
 
-    // Create linked Alert
-    await prisma.alert.create({
-      data: {
+    // Create linked Alert and automatically distribute notifications across roles
+    await AlertService.createAlert(
+      {
         expeditionId,
+        stationId: nearestStation?.id || undefined,
+        personnelId: user?.assignedPersonnelId || qualifiedPersonnel?.id || undefined,
+        type: isSos ? 'SOS' : 'EMERGENCY',
         severity: incident.severity,
         title: isSos ? `EMERGENCY SOS BEACON: ${incident.location}` : `EMERGENCY: ${incident.title}`,
+        message: incident.description,
         source: isSos ? 'Field Emergency SOS System' : 'Incident Response Dispatcher',
         affectedEntity: incident.location,
         reason: incident.description,
         impact: `${incident.peopleAffected} personnel impacted; operational rescue dispatch required.`,
         recommendedAction: responsePlan.recommendedSteps[0],
         status: 'ACTIVE',
+        createdBy: user?.id,
       },
-    });
+      user
+    );
 
     // Recalculate Risk & Alerts
     await RiskService.calculateAndRecordExpeditionRisk(expeditionId);

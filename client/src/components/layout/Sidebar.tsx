@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Package,
   Boxes,
+  Box,
   Truck,
   Users,
   Navigation,
@@ -26,6 +27,8 @@ import {
   MapPin,
   Settings,
   Flame,
+  FileText,
+  Mountain,
 } from 'lucide-react';
 import { useExpedition } from '../../context/ExpeditionContext';
 import { useAuth } from '../../context/AuthContext';
@@ -35,6 +38,15 @@ interface SidebarProps {
   onNavigate: (path: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  activeAlertCount?: number;
+}
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: any;
+  badgeCount?: number;
+  alert?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,71 +54,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   collapsed,
   onToggleCollapse,
+  activeAlertCount,
 }) => {
   const { currentExpedition, dashboard } = useExpedition();
-  const { currentRole, isAdmin, isStationManager, isExpeditionLeader, isTeamMember } = useAuth();
+  const { currentRole } = useAuth();
 
-  const activeAlerts = dashboard?.kpi.activeAlerts ?? 0;
+  const activeAlerts = activeAlertCount !== undefined ? activeAlertCount : (dashboard?.kpi.activeAlerts ?? 0);
 
-  // Define Navigation Items based on the authenticated Role (Section 14)
-  const getNavItemsForRole = () => {
-    switch (currentRole) {
-      case 'ADMIN':
-        return [
-          { id: '/dashboard', label: 'Admin Command', icon: LayoutDashboard },
-          { id: '/expeditions', label: 'Expeditions', icon: FolderOpen },
-          { id: '/stations', label: 'Stations Overview', icon: Building2 },
-          { id: '/personnel', label: 'Personnel', icon: Users },
-          { id: '/assets', label: 'Equipment & Fleet', icon: Truck },
-          { id: '/inventory', label: 'Inventory & Supplies', icon: Boxes },
-          { id: '/cargo', label: 'Cargo Operations', icon: Package },
-          { id: '/movements', label: 'Communications & Transit', icon: Navigation },
-          { id: '/alerts', label: 'Critical Alerts', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
-          { id: '/analytics', label: 'Reports & Analytics', icon: BarChart3 },
-          { id: '/organization', label: 'System Settings', icon: Settings },
-        ];
-
-      case 'STATION_MANAGER':
-        return [
-          { id: '/station', label: 'Station Command', icon: Building2 },
-          { id: '/movements', label: 'Expedition Tracking', icon: Navigation },
-          { id: '/personnel', label: 'Station Personnel', icon: Users },
-          { id: '/inventory', label: 'Station Inventory', icon: Boxes },
-          { id: '/assets', label: 'Equipment & Power', icon: Truck },
-          { id: '/cargo', label: 'Inbound Cargo', icon: Package },
-          { id: '/alerts', label: 'Station Alerts', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
-          { id: '/emergency', label: 'Incidents & Safety', icon: ShieldAlert },
-          { id: '/analytics', label: 'Station Reports', icon: BarChart3 },
-        ];
-
-      case 'EXPEDITION_LEADER':
-        return [
-          { id: '/expedition-leader', label: 'Expedition Command', icon: Compass },
-          { id: '/expedition', label: 'Mission Planning', icon: CalendarDays },
-          { id: '/assets', label: 'Equipment Assignment', icon: Wrench },
-          { id: '/personnel', label: 'Team Roster', icon: Users },
-          { id: '/cargo', label: 'Expedition Cargo', icon: Package },
-          { id: '/inventory', label: 'Supplies & Reserves', icon: Boxes },
-          { id: '/movements', label: 'Field Tracking', icon: Navigation },
-          { id: '/emergency', label: 'Incidents & SOS', icon: ShieldAlert },
-          { id: '/alerts', label: 'Expedition Alerts', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
-          { id: '/simulations', label: 'What-If Simulation', icon: SlidersHorizontal },
-        ];
-
-      case 'TEAM_MEMBER':
-      default:
-        return [
-          { id: '/member', label: 'Field Workspace', icon: Compass },
-          { id: '/expedition', label: 'My Expedition', icon: FolderOpen },
-          { id: '/movements', label: 'Team Map', icon: MapPin },
-          { id: '/assets', label: 'My Equipment', icon: Wrench },
-          { id: '/emergency', label: 'Emergency SOS', icon: ShieldAlert, alert: true },
-          { id: '/alerts', label: 'Field Alerts', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
-        ];
-    }
-  };
-
-  const navItems = getNavItemsForRole();
+  // Canonical Navigation Items unified across ALL roles (Section 20 & Section 1, 2)
+  const navItems: NavItem[] = [
+    { id: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { id: '/expeditions', label: 'Expeditions', icon: Mountain },
+    { id: '/live-map', label: 'Live Map', icon: MapPin },
+    { id: '/stations', label: 'Stations', icon: Building2 },
+    { id: '/personnel', label: 'Personnel', icon: Users },
+    { id: '/inventory', label: 'Inventory', icon: Boxes },
+    { id: '/logistics', label: 'Supply & Logistics', icon: ClipboardList },
+    { id: '/assets', label: 'Equipment', icon: Box },
+    { id: '/alerts', label: 'Alerts', icon: BellRing, badgeCount: activeAlerts > 0 ? activeAlerts : undefined },
+    { id: '/analytics', label: 'Reports', icon: BarChart3 },
+    { id: '/organization', label: 'Settings', icon: Settings },
+  ];
 
   return (
     <aside
@@ -117,24 +85,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100">
         <button
-          onClick={() => {
-            if (currentRole === 'ADMIN') onNavigate('/dashboard');
-            else if (currentRole === 'STATION_MANAGER') onNavigate('/station');
-            else if (currentRole === 'EXPEDITION_LEADER') onNavigate('/expedition-leader');
-            else onNavigate('/member');
-          }}
-          className="flex items-center space-x-3 text-left focus:outline-hidden group"
+          onClick={() => onNavigate('/dashboard')}
+          className="flex items-center space-x-2.5 text-left focus:outline-hidden group cursor-pointer"
         >
-          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-200 group-hover:bg-blue-700 transition">
-            <Radio className="w-5 h-5 text-blue-100 animate-pulse" />
+          <div className="w-8 h-8 flex items-center justify-center text-[#0284C7]">
+            <svg className="w-7 h-7 text-[#0284C7]" viewBox="0 0 36 28" fill="none">
+              <path d="M3 24L11 8L16 17L22 5L33 24H3Z" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
           {!collapsed && (
             <div>
-              <div className="font-extrabold text-sm tracking-tight text-slate-900 leading-none">
+              <div className="font-bold text-[13px] tracking-tight text-slate-900 leading-tight">
                 POLAR COMMAND
               </div>
-              <div className="text-[10px] text-blue-700 font-bold tracking-wider uppercase mt-0.5">
-                {currentRole.replace('_', ' ')}
+              <div className="text-[9px] text-slate-400 font-medium tracking-wider uppercase leading-none mt-0.5">
+                ANTARCTIC OPERATIONS
               </div>
             </div>
           )}
@@ -142,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           onClick={onToggleCollapse}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -150,49 +115,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
             currentPath === item.id ||
+            (item.id === '/logistics' && (currentPath.startsWith('/logistics') || currentPath.startsWith('/requirements'))) ||
             (item.id === '/cargo' && currentPath.startsWith('/cargo/')) ||
-            (item.id === '/expeditions' && currentPath.startsWith('/expeditions/'));
+            (item.id === '/expeditions' && currentPath.startsWith('/expeditions/')) ||
+            (item.id === '/dashboard' &&
+              (currentPath === '/station' ||
+                currentPath === '/expedition-leader' ||
+                currentPath === '/logistics-command' ||
+                currentPath === '/member' ||
+                currentPath === '/admin'));
 
           return (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
               title={collapsed ? item.label : undefined}
-              className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all group ${
+              className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs transition-all group cursor-pointer ${
                 isActive
-                  ? 'bg-blue-50 text-blue-700 border-l-3 border-blue-600 font-bold shadow-2xs'
+                  ? 'bg-sky-50 text-[#0284C7] font-semibold shadow-2xs'
                   : item.alert
-                  ? 'text-rose-700 hover:bg-rose-50'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'text-rose-700 hover:bg-rose-50 font-medium'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'
               } ${collapsed ? 'justify-center' : 'justify-between'}`}
             >
               <div className="flex items-center space-x-3">
                 <Icon
                   className={`w-4 h-4 transition ${
                     isActive
-                      ? 'text-blue-600'
+                      ? 'text-[#0284C7]'
                       : item.alert
                       ? 'text-rose-600'
                       : 'text-slate-400 group-hover:text-slate-600'
                   }`}
                 />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </div>
 
               {!collapsed && (
                 <div className="flex items-center space-x-1">
                   {item.badgeCount && (
-                    <span className="px-1.5 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] rounded-full font-bold">
+                    <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
                       {item.badgeCount}
                     </span>
                   )}
                   {item.alert && (
-                    <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 text-[9px] font-extrabold rounded uppercase">
+                    <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 text-[9px] font-semibold rounded uppercase">
                       SOS
                     </span>
                   )}
@@ -204,38 +176,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Footer Role / Mode Indicator */}
-      <div className="p-3 border-t border-slate-100 space-y-2">
-        <button
-          onClick={() => onNavigate('/login')}
-          className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition ${
-            collapsed ? 'justify-center' : 'space-x-2'
-          }`}
-          title="Switch Active Role"
-        >
-          <Users className="w-4 h-4 text-blue-600" />
-          {!collapsed && <span>Role Switcher / Login</span>}
-        </button>
-
-        <button
-          onClick={() => onNavigate('/')}
-          className={`w-full flex items-center px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition ${
-            collapsed ? 'justify-center' : 'space-x-3'
-          }`}
-          title={collapsed ? 'Public Portal' : undefined}
-        >
-          <Globe className="w-3.5 h-3.5 text-slate-400" />
-          {!collapsed && <span>Public Portal / Home</span>}
-        </button>
-
+      <div className="p-3 border-t border-slate-100 bg-white space-y-2">
         {!collapsed && (
-          <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
-            <span className="flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-semibold text-slate-800 truncate max-w-[110px]">
-                {currentExpedition?.code || 'Active'}
-              </span>
-            </span>
-            <span className="text-[10px] text-slate-400 font-mono">v2.5</span>
+          <div className="space-y-2">
+            {/* Subtle Arctic Station Illustration */}
+            <div className="w-full h-16 rounded-xl overflow-hidden relative opacity-70 bg-gradient-to-t from-sky-50 to-transparent flex items-end justify-center pb-1">
+              <svg viewBox="0 0 160 50" className="w-full h-full text-sky-400/80" fill="none">
+                <path d="M0,45 L25,22 L55,42 L85,15 L120,40 L160,25 L160,50 L0,50 Z" fill="#E0F2FE" opacity="0.6"/>
+                <path d="M15,45 L45,28 L75,45 L110,24 L145,46 L160,35 L160,50 L0,50 Z" fill="#BAE6FD" opacity="0.5"/>
+                <rect x="68" y="32" width="24" height="12" rx="1.5" fill="#93C5FD"/>
+                <line x1="80" y1="32" x2="80" y2="12" stroke="#0284C7" strokeWidth="1.5"/>
+                <circle cx="80" cy="12" r="2" fill="#0284C7"/>
+                <path d="M75,16 Q80,12 85,16" stroke="#0284C7" strokeWidth="1" fill="none"/>
+                <path d="M72,20 Q80,14 88,20" stroke="#0284C7" strokeWidth="1" fill="none"/>
+              </svg>
+            </div>
+
+            {/* Version & NCPOR Attribution */}
+            <div className="text-[10px] text-slate-400 leading-tight">
+              <div className="font-semibold text-slate-600 flex items-center gap-1">
+                <Globe className="w-3 h-3 text-sky-500" />
+                <span>PolarCommand v2.6.1</span>
+              </div>
+              <div className="text-[9px] text-slate-400 mt-0.5 font-normal">
+                Indian National Centre for Polar and Ocean Research (NCPOR)
+              </div>
+            </div>
           </div>
         )}
       </div>

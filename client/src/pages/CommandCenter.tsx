@@ -68,14 +68,14 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Command Center (Dashboard)
+              {expedition?.title || expedition?.name || 'Mission Operations Console'}
             </h1>
-            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-mono font-bold border border-sky-200">
-              {expedition?.code || 'ACTIVE'}
+            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-semibold border border-sky-200">
+              {expedition?.type || 'Operational'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            {expedition?.name || 'Antarctic Expedition Operations'} • Real-Time Integrated Monitoring
+            {expedition?.missionObjective || 'Integrated Real-Time Expedition Monitoring & Safety'}
           </p>
         </div>
 

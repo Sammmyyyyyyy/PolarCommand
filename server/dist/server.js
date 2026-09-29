@@ -64,11 +64,22 @@ app.get('/api/dashboard', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-app.get('/api/stations', async (_req, res) => {
+app.get('/api/stations', async (req, res) => {
     try {
-        const expId = await getDefaultExpeditionId();
-        const stations = await StationService.listStations(expId);
+        const expId = req.query.expeditionId || undefined;
+        const stations = await StationService.listStations(expId, req.user);
         res.json(stations);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+app.get('/api/stations/:id', async (req, res) => {
+    try {
+        const station = await StationService.getStation(req.params.id);
+        if (!station)
+            return res.status(404).json({ error: 'Station not found' });
+        res.json(station);
     }
     catch (err) {
         res.status(500).json({ error: err.message });
@@ -110,7 +121,7 @@ app.get('/api/inventory', async (req, res) => {
         const expId = await getDefaultExpeditionId();
         const station = req.query.station;
         const category = req.query.category;
-        const inv = await InventoryService.listInventory(expId, station, category);
+        const inv = await InventoryService.listInventory(expId, station, category, req.user);
         res.json(inv);
     }
     catch (err) {
@@ -122,7 +133,7 @@ app.get('/api/assets', async (req, res) => {
         const expId = await getDefaultExpeditionId();
         const type = req.query.type;
         const station = req.query.station;
-        const assets = await AssetService.listAssets(expId, type, station);
+        const assets = await AssetService.listAssets(expId, type, station, undefined, req.user);
         res.json(assets);
     }
     catch (err) {
@@ -134,7 +145,7 @@ app.get('/api/personnel', async (req, res) => {
         const expId = await getDefaultExpeditionId();
         const role = req.query.role;
         const status = req.query.status;
-        const people = await PersonnelService.listPersonnel(expId, role, status);
+        const people = await PersonnelService.listPersonnel(expId, role, status, req.user);
         res.json(people);
     }
     catch (err) {
@@ -161,14 +172,27 @@ app.post('/api/incidents', async (req, res) => {
         res.status(400).json({ error: err.message });
     }
 });
-app.get('/api/alerts', async (_req, res) => {
+app.get('/api/alerts', async (req, res) => {
     try {
-        const expId = await getDefaultExpeditionId();
-        const alerts = await AlertService.listAlerts(expId);
+        const expId = req.query.expeditionId || undefined;
+        const alerts = await AlertService.listAlerts(expId, req.user);
         res.json(alerts);
     }
     catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+app.post('/api/alerts', async (req, res) => {
+    try {
+        const expId = req.body.expeditionId || (await getDefaultExpeditionId());
+        const alert = await AlertService.createAlert({
+            ...req.body,
+            expeditionId: expId,
+        });
+        res.status(201).json(alert);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
     }
 });
 app.patch('/api/alerts/:id', async (req, res) => {

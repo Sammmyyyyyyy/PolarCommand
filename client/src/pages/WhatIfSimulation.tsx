@@ -120,7 +120,7 @@ export const WhatIfSimulation: React.FC<WhatIfSimulationProps> = ({
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Test supply chain disruptions, extreme weather spikes, and asset failures for{' '}
-            <strong className="text-slate-800">{currentExpedition?.code || 'Active Expedition'}</strong> before committing on-ice decisions
+            <strong className="text-slate-800">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</strong> before committing on-ice decisions
           </p>
         </div>
       </div>

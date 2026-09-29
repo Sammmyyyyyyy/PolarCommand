@@ -1,0 +1,285 @@
+/* Admin-only mission-control skin. The underlying pages keep their existing
+   routes, API calls, actions, and role checks. */
+.admin-shell {
+  background: #f3f8fe !important;
+}
+
+.admin-shell > aside {
+  background: linear-gradient(180deg, #fff 0%, #fafdff 100%);
+  border-color: #e2edf9;
+  box-shadow: 5px 0 24px rgb(25 75 135 / 3%);
+}
+
+.admin-shell > aside > div:first-child {
+  min-height: 76px;
+  border-color: #e8f0fa;
+}
+
+.admin-shell > aside nav {
+  padding: 16px 10px;
+  gap: 4px;
+}
+
+.admin-shell > aside nav button {
+  min-height: 42px;
+  border-radius: 11px;
+  padding-left: 13px;
+  padding-right: 13px;
+  color: #263f70;
+}
+
+.admin-shell > aside nav button.bg-blue-50 {
+  background: #eaf4ff;
+  border-left-color: #1473ed;
+  color: #075fe4;
+  box-shadow: inset 0 0 0 1px #dcecff;
+}
+
+.admin-shell > aside nav button.bg-blue-50 svg {
+  color: #1473ed;
+}
+
+.admin-shell > aside > div:last-child {
+  border-color: #e8f0fa;
+}
+
+.admin-shell header {
+  background: rgb(255 255 255 / 96%);
+  border-color: #e2edf9;
+}
+
+.admin-shell header > div:first-child {
+  min-height: 72px;
+  padding-left: 26px;
+  padding-right: 26px;
+}
+
+.admin-shell header > div:nth-child(2) {
+  background: #f4f9ff;
+  border-color: #e5effa;
+}
+
+.admin-shell main {
+  padding: 24px 28px 34px !important;
+  background:
+    radial-gradient(ellipse at 66% 0%, rgb(209 231 255 / 32%), transparent 42%),
+    #f3f8fe;
+}
+
+.admin-dashboard {
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  color: #0c1b48;
+}
+
+.admin-header-banner {
+  min-height: 120px;
+  position: relative;
+  isolation: isolate;
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.99) 0%, rgba(255, 255, 255, 0.94) 38%, rgba(255, 255, 255, 0.45) 68%, rgba(255, 255, 255, 0.92) 100%),
+    url('/images/polar_hero_landscape.jpg');
+  background-position: center 46%;
+  background-size: cover;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.03);
+}
+
+.admin-welcome {
+  min-height: 132px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 21px 24px;
+  border: 1px solid #dceafa;
+  border-radius: 18px;
+  background-image:
+    linear-gradient(90deg, rgb(249 252 255 / 98%) 0%, rgb(247 251 255 / 94%) 35%, rgb(242 249 255 / 60%) 100%),
+    url('/images/polar_hero_landscape.jpg');
+  background-position: center 47%;
+  background-size: cover;
+  box-shadow: 0 8px 24px rgb(42 100 165 / 5%);
+}
+
+.admin-welcome h1 {
+  font-size: clamp(25px, 2.2vw, 34px);
+  letter-spacing: -0.045em;
+  color: #101d4b;
+}
+
+.admin-welcome p {
+  margin-top: 5px;
+  color: #6d86b2;
+  font-size: 14px;
+}
+
+.admin-welcome > div:last-child {
+  gap: 10px;
+}
+
+.admin-welcome > div:last-child > div {
+  border-color: #dceafa;
+  border-radius: 12px;
+  box-shadow: 0 5px 16px rgb(31 85 144 / 5%);
+}
+
+.admin-welcome > div:last-child > button {
+  min-height: 42px;
+  border-radius: 11px;
+  box-shadow: 0 7px 18px rgb(20 105 225 / 18%);
+}
+
+.admin-kpi-grid {
+  gap: 13px;
+}
+
+.admin-kpi-grid > div {
+  min-height: 122px;
+  padding: 17px 18px;
+  border: 1px solid #e0ecf9;
+  border-radius: 17px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 5px 16px rgb(35 89 150 / 4%);
+}
+
+.admin-kpi-grid > div:hover {
+  border-color: #bdd9fb;
+  box-shadow: 0 10px 24px rgb(35 105 190 / 9%);
+  transform: translateY(-1px);
+}
+
+.admin-kpi-grid > div > div:nth-child(2) {
+  font-size: 29px;
+  letter-spacing: -0.04em;
+  color: #101d4b;
+}
+
+.admin-kpi-grid > div > div:first-child > div {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: #edf5ff;
+}
+
+.admin-main-grid,
+.admin-detail-grid {
+  gap: 16px;
+}
+
+.admin-panel {
+  border: 1px solid #e0ecf9;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 6px 20px rgb(35 89 150 / 4%);
+}
+
+.admin-map-panel {
+  min-height: 480px;
+  padding: 20px;
+}
+
+.admin-panel h2 {
+  color: #101d4b;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.admin-map-canvas {
+  min-height: 350px;
+  border-color: #d7e9fc;
+  border-radius: 15px;
+  background-color: #d9edff;
+  background-image:
+    linear-gradient(135deg, rgb(242 249 255 / 84%), rgb(177 217 252 / 62%)),
+    linear-gradient(rgb(33 125 207 / 6%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(33 125 207 / 6%) 1px, transparent 1px);
+  background-size: auto, 36px 36px, 36px 36px;
+}
+
+.admin-map-canvas > div:first-child {
+  opacity: 0.12;
+}
+
+.admin-map-label {
+  padding: 8px 10px;
+  border: 1px solid rgb(221 235 252 / 95%);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 95%);
+  color: #13224f;
+  box-shadow: 0 5px 18px rgb(27 68 118 / 12%);
+  backdrop-filter: blur(8px);
+}
+
+.admin-map-label span:nth-child(2) {
+  color: #15234e;
+}
+
+.admin-map-label span:nth-child(3) {
+  color: #7890b7;
+}
+
+.admin-map-panel > div:last-child {
+  padding-top: 12px;
+  color: #637da9;
+}
+
+.admin-detail-grid .admin-panel {
+  padding: 18px;
+}
+
+.admin-detail-grid table thead tr {
+  color: #7f92b2;
+}
+
+.admin-detail-grid table tbody tr:hover {
+  background: #f5f9ff;
+}
+
+.admin-dashboard button {
+  transition-duration: 160ms;
+}
+
+@media (max-width: 1100px) {
+  .admin-shell main {
+    padding: 20px 18px 28px !important;
+  }
+
+  .admin-welcome {
+    background-position: 55% center;
+  }
+
+  .admin-map-panel {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-shell main {
+    padding: 16px 12px 24px !important;
+  }
+
+  .admin-welcome {
+    align-items: flex-start;
+    padding: 18px;
+    background-position: 60% center;
+  }
+
+  .admin-welcome > div:last-child {
+    flex-wrap: wrap;
+  }
+
+  .admin-map-panel {
+    min-height: 420px;
+    padding: 15px;
+  }
+
+  .admin-map-canvas {
+    min-height: 300px;
+  }
+
+  .admin-map-label {
+    padding: 6px 7px;
+    font-size: 9px;
+  }
+}

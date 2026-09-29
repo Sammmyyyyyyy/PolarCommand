@@ -132,11 +132,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
                       <Compass className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-900 flex items-center space-x-2">
-                        <span>{e.code}</span>
-                        <span className="text-[10px] font-normal text-slate-500">({e.title})</span>
+                      <div className="text-xs font-bold text-slate-900">
+                        {e.title}
                       </div>
-                      <div className="text-[10px] text-slate-400">{e.origin} ➔ {e.destination}</div>
+                      <div className="text-[10px] text-slate-500">{e.type || 'Field Mission'} • {e.origin} ➔ {e.destination}</div>
                     </div>
                   </div>
                   <div className="text-[11px] font-semibold text-sky-600 opacity-0 group-hover:opacity-100 flex items-center space-x-1">

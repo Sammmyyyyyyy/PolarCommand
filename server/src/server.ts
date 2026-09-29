@@ -68,11 +68,21 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
-app.get('/api/stations', async (_req, res) => {
+app.get('/api/stations', async (req, res) => {
   try {
-    const expId = await getDefaultExpeditionId();
-    const stations = await StationService.listStations(expId);
+    const expId = (req.query.expeditionId as string) || undefined;
+    const stations = await StationService.listStations(expId, (req as any).user);
     res.json(stations);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/stations/:id', async (req, res) => {
+  try {
+    const station = await StationService.getStation(req.params.id);
+    if (!station) return res.status(404).json({ error: 'Station not found' });
+    res.json(station);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -113,7 +123,7 @@ app.get('/api/inventory', async (req, res) => {
     const expId = await getDefaultExpeditionId();
     const station = req.query.station as string;
     const category = req.query.category as string;
-    const inv = await InventoryService.listInventory(expId, station, category);
+    const inv = await InventoryService.listInventory(expId, station, category, (req as any).user);
     res.json(inv);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -125,7 +135,7 @@ app.get('/api/assets', async (req, res) => {
     const expId = await getDefaultExpeditionId();
     const type = req.query.type as string;
     const station = req.query.station as string;
-    const assets = await AssetService.listAssets(expId, type, station);
+    const assets = await AssetService.listAssets(expId, type, station, undefined, (req as any).user);
     res.json(assets);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -137,7 +147,7 @@ app.get('/api/personnel', async (req, res) => {
     const expId = await getDefaultExpeditionId();
     const role = req.query.role as string;
     const status = req.query.status as string;
-    const people = await PersonnelService.listPersonnel(expId, role, status);
+    const people = await PersonnelService.listPersonnel(expId, role, status, (req as any).user);
     res.json(people);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -164,13 +174,26 @@ app.post('/api/incidents', async (req, res) => {
   }
 });
 
-app.get('/api/alerts', async (_req, res) => {
+app.get('/api/alerts', async (req, res) => {
   try {
-    const expId = await getDefaultExpeditionId();
-    const alerts = await AlertService.listAlerts(expId);
+    const expId = (req.query.expeditionId as string) || undefined;
+    const alerts = await AlertService.listAlerts(expId, (req as any).user);
     res.json(alerts);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/alerts', async (req, res) => {
+  try {
+    const expId = req.body.expeditionId || (await getDefaultExpeditionId());
+    const alert = await AlertService.createAlert({
+      ...req.body,
+      expeditionId: expId,
+    });
+    res.status(201).json(alert);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
 });
 

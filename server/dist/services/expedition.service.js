@@ -3,12 +3,29 @@ import { RiskService } from './risk.service.js';
 import { AlertService } from './alert.service.js';
 import { AuditService } from './audit.service.js';
 import { OrganizationService } from './organization.service.js';
+import { ScopeService } from './scope.service.js';
 export class ExpeditionService {
-    static async listExpeditions(organizationId) {
+    static async listExpeditions(organizationId, user) {
         const where = {};
         if (organizationId)
             where.organizationId = organizationId;
-        return prisma.expedition.findMany({
+        if (user) {
+            const scope = await ScopeService.getUserScope(user);
+            if (scope.isStationManager) {
+                // Only expeditions operating from or linked to station
+                where.OR = [
+                    { id: { in: scope.expeditionIds } },
+                    { stations: { some: { id: { in: scope.stationIds } } } },
+                ];
+            }
+            else if (scope.isExpeditionLeader || scope.isTeamMember) {
+                // Only assigned expedition(s)
+                if (scope.expeditionIds.length > 0) {
+                    where.id = { in: scope.expeditionIds };
+                }
+            }
+        }
+        const list = await prisma.expedition.findMany({
             where,
             include: {
                 commander: { select: { id: true, name: true, role: true, email: true } },
@@ -28,9 +45,30 @@ export class ExpeditionService {
             },
             orderBy: { createdAt: 'desc' },
         });
+        return list.map((exp) => {
+            let parsedStationIds = [];
+            if (exp.stationIdsJson) {
+                try {
+                    const arr = JSON.parse(exp.stationIdsJson);
+                    if (Array.isArray(arr))
+                        parsedStationIds = arr;
+                }
+                catch { }
+            }
+            if (exp.stations && Array.isArray(exp.stations)) {
+                for (const st of exp.stations) {
+                    if (!parsedStationIds.includes(st.id))
+                        parsedStationIds.push(st.id);
+                }
+            }
+            return {
+                ...exp,
+                stationIds: parsedStationIds,
+            };
+        });
     }
     static async getExpedition(idOrCode) {
-        return prisma.expedition.findFirst({
+        const exp = await prisma.expedition.findFirst({
             where: {
                 OR: [{ id: idOrCode }, { code: idOrCode }],
             },
@@ -56,6 +94,27 @@ export class ExpeditionService {
                 },
             },
         });
+        if (!exp)
+            return null;
+        let parsedStationIds = [];
+        if (exp.stationIdsJson) {
+            try {
+                const arr = JSON.parse(exp.stationIdsJson);
+                if (Array.isArray(arr))
+                    parsedStationIds = arr;
+            }
+            catch { }
+        }
+        if (exp.stations && Array.isArray(exp.stations)) {
+            for (const st of exp.stations) {
+                if (!parsedStationIds.includes(st.id))
+                    parsedStationIds.push(st.id);
+            }
+        }
+        return {
+            ...exp,
+            stationIds: parsedStationIds,
+        };
     }
     static async createExpedition(input, user) {
         const existing = await prisma.expedition.findUnique({ where: { code: input.code.toUpperCase() } });
@@ -692,6 +751,14 @@ export class ExpeditionService {
             include: { station: true, item: true },
             take: 5,
         });
+        const [pendingRequirements, ongoingShipments] = await Promise.all([
+            prisma.restockRequest.count({
+                where: { status: { in: ['PENDING', 'REVIEWED', 'APPROVED'] } },
+            }),
+            prisma.cargo.count({
+                where: { status: { in: ['IN_TRANSIT', 'In Transit', 'DELAYED', 'Delayed'] } },
+            }),
+        ]);
         const activeExpeditionsCount = allExpeditions.filter((e) => e.status === 'ACTIVE').length || 12;
         const planningExpeditionsCount = allExpeditions.filter((e) => e.status === 'PLANNING' || e.status === 'Planning').length || 3;
         const completedExpeditionsCount = allExpeditions.filter((e) => e.status === 'COMPLETED' || e.status === 'Completed').length || 8;
@@ -707,6 +774,8 @@ export class ExpeditionService {
                 activeEquipment: activeEquipment > 100 ? activeEquipment : 142,
                 totalEquipment: totalEquipment > 100 ? totalEquipment : 168,
                 equipmentChange: '+8',
+                pendingRequirements,
+                ongoingShipments,
                 antarcticaWeather: {
                     tempCelsius: -18,
                     condition: 'Light Snow',

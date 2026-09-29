@@ -162,7 +162,7 @@ export const MovementsPage: React.FC = () => {
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Inter-station overland traverses, polar air shuttles, and maritime resupply voyages for{' '}
-            <strong className="text-slate-800">{currentExpedition?.code || 'Active Expedition'}</strong>
+            <strong className="text-slate-800">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</strong>
           </p>
         </div>
 

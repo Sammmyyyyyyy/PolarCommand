@@ -15,13 +15,15 @@ import {
   WifiOff,
   RefreshCw,
   Compass,
+  ShieldAlert,
 } from 'lucide-react';
-import { simulateCargoDelay, executeHeroAction, resetDemoState, updateTaskStatus, recordCheckIn, createIncident, triggerEmergencySos } from '../../services/api';
+import { simulateCargoDelay, executeHeroAction, resetDemoState, updateTaskStatus, recordCheckIn, createIncident, triggerEmergencySos, fetchUnreadNotificationCount } from '../../services/api';
 import { PrimaryRole } from '../../types';
 import { useExpedition } from '../../context/ExpeditionContext';
 import { useAuth } from '../../context/AuthContext';
 import { CommandPalette } from '../common/CommandPalette';
 import { NotificationDrawer } from '../common/NotificationDrawer';
+import { SosEmergencyModal } from '../common/SosEmergencyModal';
 import { UserRole } from '../../types';
 import { OfflineSyncService, OfflineCacheState } from '../../services/offlineSync';
 
@@ -47,14 +49,31 @@ export const Header: React.FC<HeaderProps> = ({
     triggerRefresh,
   } = useExpedition();
 
-  const { currentUser, currentRole, quickSwitchRoleLogin, logout, canExecuteActions } = useAuth();
+  const { currentUser, currentRole, logout, canExecuteActions } = useAuth();
 
   const [isExpeditionDropdownOpen, setIsExpeditionDropdownOpen] = useState(false);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [isSosModalOpen, setIsSosModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [demoBannerMessage, setDemoBannerMessage] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadUnread = async () => {
+      if (!currentUser) return;
+      const count = await fetchUnreadNotificationCount();
+      if (isMounted) setUnreadCount(count);
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [currentUser?.id, isNotificationDrawerOpen]);
 
   const displayRisk = dashboard?.kpi.overallRisk ?? expeditionRisk;
   const isRiskHigh = displayRisk > 60;
@@ -150,202 +169,75 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const roles: UserRole[] = ['COMMANDER', 'ADMIN', 'LOGISTICS_OFFICER', 'STATION_MANAGER', 'FIELD_MEMBER', 'VIEWER'];
+  const roleDisplayLabel =
+    currentRole === 'ADMIN'
+      ? 'Administrator'
+      : currentRole === 'STATION_MANAGER'
+      ? 'Station Manager'
+      : currentRole === 'EXPEDITION_LEADER'
+      ? 'Expedition Leader'
+      : currentRole === 'LOGISTICS_COMMANDER'
+      ? 'Logistics Coordinator'
+      : 'Team Member';
 
   return (
     <>
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        {/* Top Main Navigation Bar */}
+        {/* Top Main Navigation Bar - Canonical Across ALL Roles (Section 20) */}
         <div className="h-16 px-6 flex items-center justify-between gap-4">
-          {/* Left: Expedition Selector */}
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <button
-                onClick={() => setIsExpeditionDropdownOpen(!isExpeditionDropdownOpen)}
-                className="flex items-center space-x-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition group text-left"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">
-                    Active Expedition
-                  </div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center space-x-1">
-                    <span>{currentExpedition?.code || 'Select Expedition'}</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
-                  </div>
-                </div>
-              </button>
-
-              {/* Expedition Switcher Dropdown */}
-              {isExpeditionDropdownOpen && (
-                <div
-                  className="absolute left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs animate-fadeIn"
-                  onMouseLeave={() => setIsExpeditionDropdownOpen(false)}
-                >
-                  <div className="px-3 py-1.5 font-bold text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-100">
-                    Available Expeditions
-                  </div>
-                  <div className="max-h-48 overflow-y-auto py-1">
-                    {expeditions.map((exp) => (
-                      <button
-                        key={exp.id}
-                        onClick={() => {
-                          switchExpedition(exp.id);
-                          setIsExpeditionDropdownOpen(false);
-                          if (onRefreshData) onRefreshData();
-                        }}
-                        className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition ${
-                          exp.id === currentExpeditionId ? 'bg-sky-50 text-sky-800 font-bold' : 'text-slate-700'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-semibold">{exp.code}</div>
-                          <div className="text-[10px] text-slate-500 line-clamp-1">{exp.name}</div>
-                        </div>
-                        {exp.id === currentExpeditionId && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-sky-600"></span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-1 mt-1 px-1">
-                    <button
-                      onClick={() => {
-                        setIsExpeditionDropdownOpen(false);
-                        if (onNavigate) onNavigate('/expeditions/new');
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 text-sky-700 hover:bg-sky-50 rounded-lg flex items-center space-x-1.5 font-semibold text-[11px]"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create New Expedition</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsExpeditionDropdownOpen(false);
-                        if (onNavigate) onNavigate('/expeditions');
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 rounded-lg flex items-center space-x-1.5 font-medium text-[11px]"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Expeditions Hub</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Risk Indicator Pill */}
-            <div
-              className={`hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-semibold ${
-                isRiskHigh
-                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                  : isRiskMedium
-                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Risk Index: {displayRisk}/100</span>
-            </div>
-          </div>
-
-          {/* Center: Global Search (Triggers Command Palette) */}
-          <div className="flex-1 max-w-md hidden lg:block">
+          {/* Left: Global Search Input */}
+          <div className="flex-1 max-w-xl">
             <button
+              type="button"
               onClick={() => setIsCommandPaletteOpen(true)}
-              className="w-full relative flex items-center text-left"
+              className="w-full relative flex items-center text-left group cursor-pointer"
             >
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <div className="w-full pl-9 pr-12 py-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg text-xs text-slate-500 transition">
-                Search cargo ID, asset code, station...
+              <Search className="w-4 h-4 text-slate-400 group-hover:text-slate-600 absolute left-3 top-1/2 -translate-y-1/2 transition" />
+              <div className="w-full pl-9 pr-14 py-2 bg-slate-50/90 hover:bg-slate-100/90 border border-slate-200/90 rounded-xl text-xs text-slate-500 transition shadow-2xs font-normal">
+                Search expeditions, stations, personnel, equipment, requirements...
               </div>
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 border border-slate-200 px-1 rounded bg-white shadow-2xs">
-                Ctrl+K
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 border border-slate-200/90 px-1.5 py-0.5 rounded-md bg-white shadow-2xs font-medium">
+                Ctrl + K
               </span>
             </button>
           </div>
 
-          {/* Right: Weather, Hero Controls & Profile */}
-          <div className="flex items-center space-x-3">
-            {/* Real Antarctic Station Weather Telemetry */}
-            {dashboard?.stationsSummary && dashboard.stationsSummary.length > 0 && (
-              <div className="hidden xl:flex items-center space-x-3 text-xs border-r border-slate-200 pr-3">
-                {dashboard.stationsSummary.slice(0, 2).map((st) => (
-                  <div key={st.id} className="flex items-center space-x-1.5 text-slate-600">
-                    <CloudSnow className="w-3.5 h-3.5 text-sky-500" />
-                    <span className="font-semibold text-slate-800">{st.name.split(' ')[0]}:</span>
-                    <span className="font-mono text-sky-700">
-                      {st.weather ? `${st.weather.tempCelsius}°C` : '-15°C'}
-                    </span>
-                  </div>
-                ))}
+          {/* Right: Weather Context, Notifications & User Profile */}
+          <div className="flex items-center space-x-3.5">
+            {/* Current Station Weather Telemetry Context */}
+            <div className="flex items-center space-x-2 text-xs text-slate-700 font-medium px-2.5 py-1.5 bg-slate-50/80 rounded-xl border border-slate-200/80 shadow-2xs">
+              <CloudSnow className="w-4 h-4 text-sky-500" />
+              <div className="flex items-center space-x-1.5">
+                <span className="font-semibold text-slate-900">-15°C</span>
+                <span className="text-slate-500 font-normal">Maitri Station</span>
               </div>
-            )}
-
-            {/* Global Connectivity / Offline State Indicator */}
-            <div className="flex items-center space-x-1.5 border-r border-slate-200 pr-3">
-              <button
-                onClick={handleToggleOffline}
-                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                  offlineState.connectivityStatus === 'OFFLINE'
-                    ? 'bg-amber-500/10 text-amber-700 border-amber-300'
-                    : offlineState.connectivityStatus === 'SYNCING'
-                    ? 'bg-sky-50 text-sky-700 border-sky-300'
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                }`}
-                title={
-                  offlineState.simulatedOffline
-                    ? 'Simulated Offline Mode Active. Click to reconnect network.'
-                    : 'Connected to polar operational telemetry network. Click to simulate field offline mode.'
-                }
-              >
-                {offlineState.connectivityStatus === 'OFFLINE' ? (
-                  <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-                ) : (
-                  <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-                )}
-                <span className="font-mono text-[11px] font-bold">
-                  {offlineState.connectivityStatus}
-                </span>
-                {offlineState.queuedMutations.length > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-600 text-white text-[10px] rounded-full font-bold animate-pulse">
-                    {offlineState.queuedMutations.length} queued
-                  </span>
-                )}
-              </button>
-
-              {offlineState.queuedMutations.length > 0 && offlineState.connectivityStatus !== 'OFFLINE' && (
-                <button
-                  onClick={handleManualSync}
-                  disabled={isSyncing}
-                  className="p-1.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 hover:bg-sky-100 transition"
-                  title="Drain queue and sync pending field mutations"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                </button>
-              )}
             </div>
 
             {/* Notifications Bell */}
             <button
+              type="button"
               onClick={() => setIsNotificationDrawerOpen(true)}
-              className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
-              title="Operational Alerts Center"
+              className="relative p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 transition cursor-pointer"
+              title="Operational Alerts & Notifications"
             >
               <Bell className="w-4 h-4" />
-              {(dashboard?.kpi.activeAlerts ?? activeAlertCount) > 0 && (
+              {unreadCount > 0 ? (
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 min-w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              ) : (dashboard?.kpi.activeAlerts ?? activeAlertCount) > 0 ? (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
-              )}
+              ) : null}
             </button>
 
-            {/* User Profile & Role Switcher */}
+            {/* User Profile */}
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                className="flex items-center space-x-2 pl-2 border-l border-slate-200 group text-left"
+                className="flex items-center space-x-2.5 pl-2 border-l border-slate-200 group text-left cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-full bg-sky-700 text-white font-bold text-xs flex items-center justify-center ring-2 ring-sky-100">
+                <div className="w-8 h-8 rounded-full bg-[#0284C7] text-white font-semibold text-xs flex items-center justify-center shadow-xs">
                   {currentUser?.name
                     ? currentUser.name
                         .split(' ')
@@ -353,155 +245,52 @@ export const Header: React.FC<HeaderProps> = ({
                         .join('')
                         .slice(0, 2)
                         .toUpperCase()
-                    : 'CD'}
+                    : 'PC'}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <div className="text-xs font-bold text-slate-900 leading-tight">
-                    {currentUser?.name || 'Commander'}
+                  <div className="text-xs font-semibold text-slate-900 leading-tight">
+                    {currentUser?.name || 'Operations Officer'}
                   </div>
-                  <div className="text-[10px] text-sky-700 font-semibold flex items-center space-x-1">
-                    <span>{currentRole}</span>
+                  <div className="text-[11px] text-slate-500 font-normal flex items-center space-x-1">
+                    <span>{roleDisplayLabel}</span>
                     <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-slate-700" />
                   </div>
                 </div>
               </button>
 
-              {/* RBAC Role Switcher Dropdown */}
+              {/* Profile Dropdown Menu */}
               {isRoleDropdownOpen && (
                 <div
-                  className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs animate-fadeIn"
+                  className="absolute right-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2.5 text-xs animate-fadeIn font-sans"
                   onMouseLeave={() => setIsRoleDropdownOpen(false)}
                 >
-                  <div className="px-3 py-1 font-bold text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-100">
-                    Switch Authenticated Operational Role
+                  <div className="px-3.5 pb-2.5 border-b border-slate-100">
+                    <div className="font-semibold text-slate-900 text-sm">{currentUser?.name || 'Operator'}</div>
+                    <div className="text-[11px] text-slate-500 font-normal truncate mt-0.5">{currentUser?.email || 'operator@polarcommand.org'}</div>
+                    <div className="mt-2">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+                        {roleDisplayLabel}
+                      </span>
+                    </div>
                   </div>
-                  {[
-                    { role: 'ADMIN' as PrimaryRole, label: 'Admin (Mission Control)', path: '/dashboard' },
-                    { role: 'STATION_MANAGER' as PrimaryRole, label: 'Station Manager (Maitri)', path: '/station' },
-                    { role: 'EXPEDITION_LEADER' as PrimaryRole, label: 'Expedition Leader', path: '/expedition-leader' },
-                    { role: 'TEAM_MEMBER' as PrimaryRole, label: 'Team Member (Field)', path: '/member' },
-                  ].map((r) => (
+
+                  <div className="px-2 pt-2">
                     <button
-                      key={r.role}
-                      onClick={async () => {
-                        setIsRoleDropdownOpen(false);
-                        await quickSwitchRoleLogin(r.role);
-                        if (onNavigate) onNavigate(r.path);
-                      }}
-                      className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition ${
-                        currentRole === r.role ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-semibold">{r.label}</div>
-                        <div className="text-[10px] text-slate-400">{r.role}</div>
-                      </div>
-                      {currentRole === r.role && <UserCheck className="w-3.5 h-3.5 text-sky-600" />}
-                    </button>
-                  ))}
-                  <div className="px-2 py-1.5 border-t border-slate-100 mt-1">
-                    <button
+                      type="button"
                       onClick={() => {
                         setIsRoleDropdownOpen(false);
                         logout();
                         if (onNavigate) onNavigate('/login');
                       }}
-                      className="w-full text-left px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded transition"
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition flex items-center justify-between cursor-pointer"
                     >
-                      Sign Out / Switch Account
+                      <span>Sign Out</span>
                     </button>
                   </div>
                 </div>
               )}
             </div>
           </div>
-        </div>
-
-        {/* Hero Quick Control Ribbon */}
-        <div className="bg-sky-50/70 text-slate-800 border-b border-sky-100 px-6 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
-          {currentRole === 'TEAM_MEMBER' ? (
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center space-x-2">
-                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
-                  Field Member Workspace
-                </span>
-                <span className="text-slate-600 font-medium text-[11px]">
-                  Logged in as Field Member. High-level command actions are restricted to Commander/Admin.
-                </span>
-              </div>
-              <button
-                onClick={() => onNavigate && onNavigate('/member')}
-                className="flex items-center space-x-1.5 px-3 py-1 bg-[#0284C7] hover:bg-sky-700 text-white rounded font-bold text-[11px] transition shadow-2xs"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Go to Field Member Workspace</span>
-              </button>
-            </div>
-          ) : currentRole === 'STATION_MANAGER' ? (
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center space-x-2">
-                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold uppercase rounded tracking-wider">
-                  Station Command Active
-                </span>
-                <span className="text-slate-600 font-medium text-[11px]">
-                  Managing station inventory, restock alerts, and expedition staging.
-                </span>
-              </div>
-              <button
-                onClick={() => onNavigate && onNavigate('/station')}
-                className="flex items-center space-x-1.5 px-3 py-1 bg-[#0284C7] hover:bg-sky-700 text-white rounded font-bold text-[11px] transition shadow-2xs"
-              >
-                <span>Go to Station Command Center</span>
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center space-x-2">
-                <span className="px-1.5 py-0.5 bg-[#0284C7] text-white text-[10px] font-extrabold uppercase rounded tracking-wider">
-                  Decision Support
-                </span>
-                <span className="text-slate-600 font-medium text-[11px] hidden sm:inline">
-                  Expedition Operations:
-                </span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={handleSimulateDelay}
-                  disabled={isProcessing}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded font-semibold text-[11px] transition shadow-2xs disabled:opacity-50"
-                  title="Simulate delay to trigger automated risk cascade and alert generation"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>Simulate Delay</span>
-                </button>
-
-                <button
-                  onClick={handleExecuteHeroAction}
-                  disabled={isProcessing || !canExecuteActions}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-semibold text-[11px] transition shadow-2xs disabled:opacity-50"
-                  title={
-                    canExecuteActions
-                      ? 'Execute recommended reallocation to mitigate risk'
-                      : 'Commander or Admin role required to execute action'
-                  }
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Reallocate Stock (Mitigate Risk)</span>
-                </button>
-
-                <button
-                  onClick={handleReset}
-                  disabled={isProcessing}
-                  className="flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-medium transition shadow-2xs"
-                  title="Reset state to baseline"
-                >
-                  <RotateCcw className="w-3 h-3 text-slate-400" />
-                  <span className="hidden md:inline">Reset</span>
-                </button>
-              </div>
-            </>
-          )}
         </div>
 
         {/* Dynamic Status Notification Banner */}
@@ -510,7 +299,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{demoBannerMessage}</span>
             <button
               onClick={() => setDemoBannerMessage(null)}
-              className="text-sky-700 hover:text-sky-900 text-xs font-bold"
+              className="text-sky-700 hover:text-sky-900 text-xs font-semibold"
             >
               Dismiss
             </button>
@@ -535,6 +324,18 @@ export const Header: React.FC<HeaderProps> = ({
         expeditionId={currentExpeditionId || ''}
         onNavigate={(path) => {
           if (onNavigate) onNavigate(path);
+        }}
+      />
+
+      {/* Emergency SOS Countdown Modal (Section M) */}
+      <SosEmergencyModal
+        isOpen={isSosModalOpen}
+        onClose={() => setIsSosModalOpen(false)}
+        onSuccess={() => {
+          setIsSosModalOpen(false);
+          triggerRefresh();
+          if (onRefreshData) onRefreshData();
+          if (onNavigate) onNavigate('/live-map');
         }}
       />
     </>

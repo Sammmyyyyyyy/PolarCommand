@@ -128,7 +128,7 @@ export const EmergencyResponse: React.FC<EmergencyResponseProps> = ({
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Autonomous rescue triage, nearest operational asset routing, and rapid emergency response dispatch for{' '}
-            <strong className="text-slate-800">{currentExpedition?.code || 'Active Expedition'}</strong>
+            <strong className="text-slate-800">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</strong>
           </p>
         </div>
 

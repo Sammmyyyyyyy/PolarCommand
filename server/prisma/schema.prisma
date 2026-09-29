@@ -26,7 +26,11 @@ model User {
   passwordHash        String
   name                String
   role                String        // ADMIN, COMMANDER, LOGISTICS_OFFICER, STATION_MANAGER, FIELD_MEMBER, VIEWER
+  status              String        @default("ACTIVE")
   stationId           String?
+  stationIdsJson      String?       @default("[]")
+  expeditionIdsJson   String?       @default("[]")
+  teamLeaderId        String?
   organizationId      String?
   organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   assignedPersonnelId String?       @unique
@@ -42,6 +46,7 @@ model User {
   assignedExpedition   Expedition?   @relation("UserAssignedExpedition", fields: [assignedExpeditionId], references: [id], onDelete: SetNull)
   assignedAssets       Asset[]       @relation("UserAssetLink")
   restockRequests      RestockRequest[] @relation("UserRestockRequests")
+  notifications       Notification[]
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -58,6 +63,9 @@ model Expedition {
   commanderId        String?
   commander          User?              @relation("ExpeditionCommander", fields: [commanderId], references: [id], onDelete: SetNull)
   commanderName      String?
+  leaderId           String?
+  stationIdsJson     String?            @default("[]")
+  memberIdsJson      String?            @default("[]")
   status             String             // PLANNING, ACTIVE, COMPLETED, ARCHIVED
   lifecycleStatus    String             @default("PLANNED") // DRAFT, PLANNED, ACTIVE, PAUSED, COMPLETED, CANCELLED, ARCHIVED
   startDate          DateTime
@@ -91,6 +99,7 @@ model Expedition {
   auditLogs          AuditLog[]
   assignedUsers      User[]             @relation("UserAssignedExpedition")
   trackingPings      TrackingPing[]
+  restockRequests    RestockRequest[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -99,12 +108,13 @@ model Expedition {
 
 model Station {
   id                 String            @id @default(uuid())
-  expeditionId       String
-  expedition         Expedition        @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  expeditionId       String?
+  expedition         Expedition?       @relation(fields: [expeditionId], references: [id], onDelete: SetNull)
   organizationId     String?
   organization       Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   name               String
   code               String
+  location           String?
   region             String
   latitude           Float
   longitude          Float
@@ -112,6 +122,9 @@ model Station {
   capacity           Int               @default(30)
   currentRisk        Float             @default(0)
   connectivityStatus String            @default("ONLINE")
+  managerId          String?
+  personnelIdsJson   String?           @default("[]")
+  expeditionIdsJson  String?           @default("[]")
   weather            WeatherSnapshot[]
   personnel          Personnel[]
   inventory          InventoryItem[]
@@ -122,6 +135,7 @@ model Station {
   actions            ActionItem[]
   riskSnapshots      RiskSnapshot[]
   restockRequests    RestockRequest[]
+  alerts             Alert[]
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -184,6 +198,10 @@ model Personnel {
   connectionStatus      String              @default("LIVE") // LIVE, LAST_KNOWN, OFFLINE
   lastLocationUpdate    DateTime?
   assignedUserLink      User?               @relation("UserPersonnelLink")
+  teamLeaderId          String?
+  managerId             String?
+  stationIdsJson        String?             @default("[]")
+  expeditionIdsJson     String?             @default("[]")
   assignedTasks         Task[]
   checkInLogs           CheckInLog[]
   assignedIncidents     Incident[]
@@ -454,22 +472,33 @@ model Incident {
 
 model Alert {
   id                String       @id @default(uuid())
-  expeditionId      String
-  expedition        Expedition   @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  type              String       @default("OPERATIONAL")
   severity          String       // CRITICAL, HIGH, MEDIUM, LOW
   title             String
+  message           String?
   source            String
   affectedEntity    String
   reason            String
   impact            String
   recommendedAction String
   status            String       @default("ACTIVE") // ACTIVE, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, DISMISSED
+
+  createdBy         String?
+  personnelId       String?
+  stationId         String?
+  station           Station?     @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  expeditionId      String
+  expedition        Expedition   @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  recipientsJson    String?      @default("[]")
+
+  notifications     Notification[]
   actions           ActionItem[]
   observations      FieldObservation[]
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   @@index([expeditionId])
+  @@index([stationId])
   @@index([status])
 }
 
@@ -603,19 +632,26 @@ model OperationalDocument {
 
 model RestockRequest {
   id                String         @id @default(uuid())
-  stationId         String
-  station           Station        @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  itemId            String
-  item              InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  stationId         String?
+  station           Station?       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  expeditionId      String?
+  expedition        Expedition?    @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  itemId            String?
+  item              InventoryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  itemName          String?
+  category          String?
+  unit              String?        @default("units")
   requestedById     String?
   requestedBy       User?          @relation("UserRestockRequests", fields: [requestedById], references: [id], onDelete: SetNull)
   requestedByName   String
+  requestedByRole   String?
   requestedQuantity Float
-  currentQuantity   Float
-  minimumQuantity   Float
+  currentQuantity   Float          @default(0)
+  minimumQuantity   Float          @default(0)
   priority          String         @default("HIGH") // CRITICAL, HIGH, MEDIUM, LOW
   status            String         @default("PENDING") // PENDING, REVIEWED, APPROVED, CARGO_CREATED, IN_TRANSIT, FULFILLED, REJECTED
   adminNotes        String?
+  notes             String?
   linkedCargoId     String?
   linkedCargo       Cargo?         @relation(fields: [linkedCargoId], references: [id], onDelete: SetNull)
   resolvedAt        DateTime?
@@ -623,8 +659,28 @@ model RestockRequest {
   updatedAt         DateTime       @updatedAt
 
   @@index([stationId])
+  @@index([expeditionId])
   @@index([itemId])
   @@index([status])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertId     String?
+  alert       Alert?   @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  type        String   @default("ALERT") // ALERT, SOS, INVENTORY, EXPEDITION
+  severity    String   @default("HIGH")
+  isRead      Boolean  @default(false)
+  link        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isRead])
 }
 
 model TrackingPing {

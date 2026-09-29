@@ -6,6 +6,7 @@ import { AssetService } from '../services/asset.service.js';
 import { TrackingService } from '../services/tracking.service.js';
 import { IncidentService } from '../services/incident.service.js';
 import { ExpeditionService } from '../services/expedition.service.js';
+import { AlertService } from '../services/alert.service.js';
 import { prisma } from '../config/database.js';
 export const operationsRouter = Router();
 const p = (v) => (Array.isArray(v) ? v[0] : String(v || ''));
@@ -86,6 +87,16 @@ operationsRouter.post('/inventory/:id/restock-request', requireAuth, requirePerm
         res.status(400).json({ error: err.message || 'Failed to create restock request' });
     }
 });
+// Create direct operational supply requirement / restock request
+operationsRouter.post('/restock-requests', requireAuth, async (req, res) => {
+    try {
+        const restock = await InventoryService.createRestockRequest(req.body.itemId || 'requirement', req.body, req.user);
+        res.status(201).json(restock);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message || 'Failed to create restock request' });
+    }
+});
 // List restock requests (Admin sees global, Station Manager sees scoped to their station)
 operationsRouter.get('/restock-requests', async (req, res) => {
     try {
@@ -97,7 +108,7 @@ operationsRouter.get('/restock-requests', async (req, res) => {
         const requests = await InventoryService.listRestockRequests({
             stationId,
             status: req.query.status ? p(req.query.status) : undefined,
-        });
+        }, req.user);
         res.json(requests);
     }
     catch (err) {
@@ -114,6 +125,68 @@ operationsRouter.get('/restock-requests/:id', async (req, res) => {
     }
     catch (err) {
         res.status(500).json({ error: err.message || 'Failed to get restock request' });
+    }
+});
+// Update restock request (status, notes, priority, requestedQuantity)
+operationsRouter.patch('/restock-requests/:id', requireAuth, async (req, res) => {
+    try {
+        const id = p(req.params.id);
+        const updated = await InventoryService.updateRestockRequest(id, req.body, req.user);
+        res.json(updated);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message || 'Failed to update restock request' });
+    }
+});
+// ==========================================
+// NOTIFICATIONS API (Persistent Per-User)
+// ==========================================
+operationsRouter.get('/notifications', async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?.userId;
+        if (!userId)
+            return res.json([]);
+        const notifications = await AlertService.listNotifications(userId);
+        res.json(notifications);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to fetch notifications' });
+    }
+});
+operationsRouter.get('/notifications/unread-count', async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?.userId;
+        if (!userId)
+            return res.json({ count: 0, unreadCount: 0 });
+        const count = await AlertService.getUnreadNotificationCount(userId);
+        res.json({ count, unreadCount: count });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to fetch unread count' });
+    }
+});
+operationsRouter.patch('/notifications/:id/read', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?.userId;
+        if (!userId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        await AlertService.markNotificationAsRead(p(req.params.id), userId);
+        res.json({ success: true });
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message || 'Failed to mark notification as read' });
+    }
+});
+operationsRouter.post('/notifications/mark-all-read', requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?.userId;
+        if (!userId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        await AlertService.markAllNotificationsAsRead(userId);
+        res.json({ success: true });
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message || 'Failed to mark all notifications as read' });
     }
 });
 // ADMIN fulfills Restock Request by creating/dispatching Cargo Operation

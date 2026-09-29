@@ -24,6 +24,7 @@ import {
   Info,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getUserScope } from '../utils/userScope';
 import {
   fetchStations,
   fetchStationInventory,
@@ -93,10 +94,16 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
         setStations(stationRes);
         setExpeditions(expRes);
 
-        // Determine default station: user's assigned station or first station
+        // Determine default station: user's assigned station via scope
+        const scope = getUserScope(currentUser);
         let defaultStId = stationRes[0]?.id || '';
-        if (currentUser?.stationId) {
-          const userSt = stationRes.find((s) => s.id === currentUser.stationId);
+        if (scope.primaryStationId) {
+          const userSt = stationRes.find(
+            (s) =>
+              s.id === scope.primaryStationId ||
+              s.code?.toLowerCase() === scope.primaryStationId?.toLowerCase() ||
+              s.name.toLowerCase().includes(scope.primaryStationId?.toLowerCase() || '')
+          );
           if (userSt) defaultStId = userSt.id;
         }
         setSelectedStationId(defaultStId);
@@ -146,10 +153,13 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
   // Expeditions linked to this station
   const stationExpeditions = expeditions.filter((exp) => {
     const expName = exp.name || exp.title || '';
+    const stNameLower = (currentStation?.name || '').toLowerCase().split(' ')[0];
     return (
       exp.startStationId === selectedStationId ||
       exp.endStationId === selectedStationId ||
-      expName.toLowerCase().includes(currentStation?.name?.toLowerCase() || '')
+      (exp.stationIds && exp.stationIds.includes(selectedStationId)) ||
+      (exp.stations && exp.stations.some((s) => s.id === selectedStationId)) ||
+      (stNameLower && expName.toLowerCase().includes(stNameLower))
     );
   });
 
@@ -271,7 +281,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                 {currentStation?.name || 'Polar Station'} Command Center
               </h1>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -279,43 +289,16 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Station Sector:{' '}
-              {currentStation?.coordinates
-                ? `${currentStation.coordinates.lat}° S, ${currentStation.coordinates.lng}° E`
-                : `${currentStation?.latitude ?? -70.76}° S, ${currentStation?.longitude ?? 11.73}° E`}{' '}
-              • Manager: <span className="font-semibold text-slate-700">{currentUser?.name}</span>
+              Manager: <span className="font-semibold text-slate-700">{currentUser?.name || (currentStation as any)?.manager?.name || 'Dr. Rajesh Nair'}</span>
             </p>
           </div>
         </div>
 
-        {/* Station Selector & Actions */}
+        {/* Right side controls: KEEP ONLY: + Add Inventory Item */}
         <div className="flex items-center gap-2">
-          {stations.length > 1 && (
-            <select
-              value={selectedStationId}
-              onChange={(e) => setSelectedStationId(e.target.value)}
-              className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 font-semibold text-slate-700 hover:bg-slate-100 focus:outline-hidden"
-            >
-              {stations.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name} ({st.region || 'Polar Sector'})
-                </option>
-              ))}
-            </select>
-          )}
-
-          <button
-            onClick={() => loadStationData(selectedStationId)}
-            disabled={isRefreshing}
-            className="p-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition"
-            title="Refresh Telemetry"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
-          </button>
-
           <button
             onClick={() => setIsAddItemModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-xl shadow-xs transition"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold rounded-xl shadow-xs transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Inventory Item</span>
@@ -331,7 +314,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
             <span>Station Weather</span>
             <CloudSnow className="w-4 h-4 text-blue-500" />
           </div>
-          <div className="text-xl font-black text-slate-900">
+          <div className="text-xl font-bold text-slate-900">
             {currentStation?.weather?.tempCelsius ?? -19}°C
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
@@ -346,7 +329,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
             <span>Station Personnel</span>
             <Users className="w-4 h-4 text-sky-500" />
           </div>
-          <div className="text-xl font-black text-slate-900">
+          <div className="text-xl font-bold text-slate-900">
             {currentStation?.personnelCount || 12} / {currentStation?.capacity || 25}
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
@@ -357,35 +340,34 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
           </div>
         </div>
 
-        {/* Inventory Stock Health */}
+        {/* Inventory Items Card */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-2">
-            <span>Inventory Health</span>
+            <span>Inventory Items</span>
             <Boxes className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-xl font-black text-slate-900">{inventory.length} SKUs</div>
+          <div className="text-xl font-bold text-slate-900">{inventory.length}</div>
           <div className="text-[11px] mt-1 flex items-center justify-between">
             {lowItems.length > 0 ? (
-              <span className="text-amber-600 font-bold flex items-center gap-1">
+              <span className="text-amber-600 font-semibold flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                {lowItems.length} Low / Shortage
+                {lowItems.length} Shortage
               </span>
             ) : (
-              <span className="text-emerald-600 font-bold">All Stock Normal</span>
+              <span className="text-emerald-600 font-semibold">0 Shortage</span>
             )}
-            <span className="text-slate-400 font-mono text-[10px]">{criticalItems.length} Crit</span>
           </div>
         </div>
 
-        {/* Active Restock Requests */}
+        {/* Restock Card */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-2">
-            <span>Restock Pipeline</span>
+            <span>Restock</span>
             <Truck className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="text-xl font-black text-slate-900">{restockRequests.length}</div>
+          <div className="text-xl font-bold text-slate-900">{restockRequests.length}</div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-            <span>Active Requests</span>
+            <span>{restockRequests.length} Active Requests</span>
             <span className="font-semibold text-indigo-600">
               {restockRequests.filter((r) => r.status === 'CARGO_CREATED' || r.status === 'IN_TRANSIT').length} In Transit
             </span>
@@ -398,10 +380,10 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
             <span>Active Expeditions</span>
             <Compass className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-xl font-black text-slate-900">{stationExpeditions.length} Field Ops</div>
+          <div className="text-xl font-bold text-slate-900">{stationExpeditions.length} Field Operations</div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-            <span>Comms Status</span>
-            <span className="text-emerald-600 font-bold flex items-center gap-1">
+            <span>Communications Status</span>
+            <span className="text-emerald-600 font-semibold flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               Optimal
             </span>
@@ -409,33 +391,34 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
         </div>
       </div>
 
-      {/* Critical Shortage Warning Banner (Closed-loop workflow prompt) */}
+      {/* AI Shortage Alert (Simplified, compact, with View Items and Request Restock) */}
       {lowItems.length > 0 && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-amber-100 text-amber-800 rounded-xl mt-0.5">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <h4 className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">
-                Automated Shortage Detection: {lowItems.length} Item(s) Below Threshold
-              </h4>
-              <p className="text-xs text-amber-700 mt-0.5">
-                The polar telemetry system detected reserves below safe minimum levels at {currentStation?.name}.
-                Recommended action: initiate replenishment restock request for Mission Control Admin fulfillment.
-              </p>
-            </div>
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <span className="text-sm font-bold text-amber-900">
+              AI Shortage Detected: {lowItems.length} {lowItems.length === 1 ? 'Item' : 'Items'}
+            </span>
           </div>
-          <button
-            onClick={() => {
-              if (lowItems[0]) handleOpenRestock(lowItems[0]);
-            }}
-            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs rounded-xl shadow-xs transition whitespace-nowrap self-start md:self-auto"
-          >
-            Request Restock for {lowItems[0]?.itemName}
-          </button>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              onClick={() => setActiveTab('INVENTORY')}
+              className="px-3.5 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-xl transition cursor-pointer shadow-2xs"
+            >
+              View Items
+            </button>
+            <button
+              onClick={() => {
+                if (lowItems[0]) handleOpenRestock(lowItems[0]);
+              }}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs font-semibold rounded-xl shadow-2xs transition cursor-pointer"
+            >
+              Request Restock
+            </button>
+          </div>
         </div>
       )}
+
 
       {/* Main Tabs Navigation */}
       <div className="flex border-b border-slate-200 text-xs font-bold gap-6">
@@ -488,7 +471,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <span>Expeditions & Tracking</span>
+          <span>Expedition Operations</span>
           <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded-full text-[10px]">
             {stationExpeditions.length}
           </span>
@@ -535,54 +518,38 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
               </div>
             </div>
 
-            {/* Expeditions Operating from this Station */}
+            {/* Active Expeditions Linked to Station (Simplified) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-slate-900">Active Field Expeditions Linked to Station</h3>
+                <h3 className="text-sm font-bold text-slate-900">Active Expeditions</h3>
                 <span className="text-xs text-slate-400 font-semibold">{stationExpeditions.length} active</span>
               </div>
 
               {stationExpeditions.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
-                  No active field expeditions currently staged at {currentStation?.name}.
+                  No active field expeditions currently associated with {currentStation?.name}.
                 </div>
               ) : (
                 <div className="space-y-2.5">
                   {stationExpeditions.map((exp) => (
                     <div
                       key={exp.id}
-                      className="p-3.5 bg-slate-50/70 hover:bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between transition"
+                      className="p-3.5 bg-slate-50/70 hover:bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between gap-3 transition"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-                          <Compass className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-xs text-slate-900">{exp.name}</div>
-                          <div className="text-[10px] text-slate-500">
-                            Code: <span className="font-mono">{exp.code}</span> • Type: {exp.type} • Status:{' '}
-                            <span className="font-semibold text-emerald-600">{exp.status}</span>
-                          </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900 truncate">{exp.name || exp.title}</div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                          {exp.missionObjective || exp.type || 'Polar research and field operations'}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 text-right">
-                        <div className="hidden sm:block">
-                          <div className="text-xs font-bold text-slate-800">
-                            {exp.teamCount ?? 6} Personnel
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            Risk Index: {exp.overallRisk ?? 35}/100
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => onNavigate && onNavigate('/expeditions')}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition"
-                          title="View Expedition"
-                        >
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => onNavigate && onNavigate(`/expeditions/${exp.id}`)}
+                        className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline shrink-0 cursor-pointer"
+                      >
+                        <span>View Expedition</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -775,22 +742,16 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
                           )}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {isLow && (
-                              <button
-                                onClick={() => handleOpenRestock(item)}
-                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-[11px] font-bold shadow-2xs transition"
-                              >
-                                Request Restock
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleOpenRestock(item)}
-                              className="px-2 py-1 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-semibold transition"
-                            >
-                              Restock
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleOpenRestock(item)}
+                            className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer shadow-2xs ${
+                              isLow || isCritical
+                                ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white'
+                                : 'border border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            Request Restock
+                          </button>
                         </td>
                       </tr>
                     );
@@ -802,21 +763,16 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
         </div>
       )}
 
-      {/* TAB 3: RESTOCK REQUESTS & CARGO TRACKING */}
+      {/* TAB 3: RESTOCK REQUESTS & CARGO FULFILLMENT */}
       {activeTab === 'RESTOCK' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Restock Requests & Cargo Fulfillment Pipeline</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Track replenishment orders dispatched by Admin to {currentStation?.name}.
-              </p>
-            </div>
+            <h3 className="text-sm font-bold text-slate-900">Restock Requests & Cargo Fulfillment</h3>
             <button
               onClick={() => {
                 if (inventory[0]) handleOpenRestock(inventory[0]);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Create Restock Request</span>
@@ -827,40 +783,36 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Request ID / Date</th>
-                  <th className="py-3 px-4">Item & Quantity</th>
+                  <th className="py-3 px-4">Date</th>
+                  <th className="py-3 px-4">Item</th>
+                  <th className="py-3 px-4">Quantity</th>
                   <th className="py-3 px-4">Priority</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Linked Cargo Shipment</th>
-                  <th className="py-3 px-4">Admin Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {restockRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
                       No restock requests generated yet for {currentStation?.name}.
                     </td>
                   </tr>
                 ) : (
                   restockRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3 px-4">
-                        <div className="font-mono font-bold text-slate-900">{req.id.slice(0, 8)}...</div>
-                        <div className="text-[10px] text-slate-400">
-                          {new Date(req.createdAt).toLocaleDateString()}
-                        </div>
+                      <td className="py-3 px-4 text-slate-600 font-medium">
+                        {new Date(req.createdAt).toLocaleDateString()}
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{req.item?.itemName || 'Item'}</div>
-                        <div className="text-[11px] text-slate-500">
-                          Requested: <span className="font-semibold text-blue-600">{req.requestedQuantity}</span>{' '}
-                          {req.item?.unit || 'units'}
-                        </div>
+                      <td className="py-3 px-4 font-bold text-slate-900">
+                        {req.item?.itemName || 'Item'}
+                      </td>
+                      <td className="py-3 px-4 text-slate-700">
+                        <span className="font-semibold text-blue-600">{req.requestedQuantity}</span>{' '}
+                        {req.item?.unit || 'units'}
                       </td>
                       <td className="py-3 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                             req.priority === 'CRITICAL'
                               ? 'bg-rose-100 text-rose-800'
                               : req.priority === 'HIGH'
@@ -873,7 +825,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
                       </td>
                       <td className="py-3 px-4">
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
                             req.status === 'FULFILLED'
                               ? 'bg-emerald-100 text-emerald-800'
                               : req.status === 'CARGO_CREATED' || req.status === 'IN_TRANSIT'
@@ -886,23 +838,6 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
                           {req.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
-                        {req.linkedCargo ? (
-                          <div>
-                            <span className="font-mono font-bold text-blue-600">
-                              {req.linkedCargo.trackingCode || req.linkedCargo.id}
-                            </span>
-                            <div className="text-[10px] text-slate-500">
-                              ETA: {req.linkedCargo.estimatedArrival ? new Date(req.linkedCargo.estimatedArrival).toLocaleDateString() : 'En route'}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic">Awaiting Admin Cargo Dispatch</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 text-[11px] max-w-xs truncate">
-                        {req.adminNotes || req.notes || '—'}
-                      </td>
                     </tr>
                   ))
                 )}
@@ -912,45 +847,46 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
         </div>
       )}
 
-      {/* TAB 4: EXPEDITIONS & TRACKING */}
+      {/* TAB 4: EXPEDITION OPERATIONS */}
       {activeTab === 'EXPEDITIONS' && (
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-            <h3 className="text-sm font-bold text-slate-900 mb-2">Expedition Movements Operating from Station</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Local accountability for personnel and vehicles operating within the station sector.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Expedition Operations</h3>
+              <span className="text-xs text-slate-500 font-medium">Operating from {currentStation?.name}</span>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {stationExpeditions.map((exp) => (
                 <div key={exp.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-bold text-sm text-slate-900">{exp.name}</div>
-                      <div className="text-[10px] font-mono text-slate-400">ID: {exp.code}</div>
+                      <div className="font-bold text-sm text-slate-900">{exp.name || exp.title}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">
+                        {exp.missionObjective || exp.type || 'Field exploration and sampling'}
+                      </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800">
-                      {exp.status}
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
+                      {exp.status || 'Active'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 bg-white rounded-lg border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block">Personnel</span>
-                      <span className="font-bold text-slate-800">{exp.teamCount ?? 6} active</span>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      <span>GPS Telemetry:</span>
+                      <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        Operational
+                      </span>
                     </div>
-                    <div className="p-2 bg-white rounded-lg border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block">Risk Level</span>
-                      <span className="font-bold text-slate-800">{exp.overallRisk ?? 35} / 100</span>
-                    </div>
-                  </div>
 
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1">
-                    <span>GPS Telemetry Link:</span>
-                    <span className="text-emerald-600 font-bold flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      LIVE PING
-                    </span>
+                    <button
+                      onClick={() => onNavigate && onNavigate(`/expeditions/${exp.id}`)}
+                      className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                    >
+                      <span>View Expedition</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -958,6 +894,7 @@ export const StationManagerDashboard: React.FC<StationManagerDashboardProps> = (
           </div>
         </div>
       )}
+
 
       {/* MODAL 1: ADD INVENTORY ITEM */}
       {isAddItemModalOpen && (

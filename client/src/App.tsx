@@ -25,6 +25,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AppLayout } from './components/layout/AppLayout';
 import { CommandCenter } from './pages/CommandCenter';
 import { ExpeditionListPage } from './pages/ExpeditionListPage';
+import { ExpeditionDetailPage } from './pages/ExpeditionDetailPage';
 import { CreateExpeditionPage } from './pages/CreateExpeditionPage';
 import { ExpeditionPlanning } from './pages/ExpeditionPlanning';
 import { CargoTracking } from './pages/CargoTracking';
@@ -46,10 +47,17 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { StationManagerDashboard } from './pages/StationManagerDashboard';
 import { ExpeditionLeaderDashboard } from './pages/ExpeditionLeaderDashboard';
 import { TeamMemberWorkspace } from './pages/TeamMemberWorkspace';
+import { LogisticsCommanderDashboard } from './pages/LogisticsCommanderDashboard';
+import { LogisticsHub } from './pages/LogisticsHub';
+import { LiveMapPage } from './pages/LiveMapPage';
+import { MissionPlanningPage } from './pages/MissionPlanningPage';
 import { ShieldAlert } from 'lucide-react';
 
 function MainApp() {
-  const [currentPath, setCurrentPath] = useState<string>('/');
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    const p = window.location.pathname;
+    return p && p !== '/' ? p : '/';
+  });
   const [selectedCargoId, setSelectedCargoId] = useState<string>('MED-024');
 
   const {
@@ -62,10 +70,14 @@ function MainApp() {
 
   const {
     currentRole,
+    currentUser,
+    isAuthenticated,
+    isLoadingAuth,
     isAdmin,
     isStationManager,
     isExpeditionLeader,
     isTeamMember,
+    isLogisticsCommander,
     canCreateExpedition,
   } = useAuth();
 
@@ -78,6 +90,40 @@ function MainApp() {
   const [alertsList, setAlertsList] = useState<Alert[]>([]);
   const [actionsList, setActionsList] = useState<ActionItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+
+  // Sync with browser history and handle popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname || '/');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Auth routing guard: unauthenticated users redirect to login, authenticated users at /login redirect to dashboard
+  useEffect(() => {
+    if (isLoadingAuth) return;
+    if (!isAuthenticated && currentPath !== '/' && currentPath !== '/login') {
+      setCurrentPath('/login');
+      if (window.location.pathname !== '/login') {
+        window.history.pushState({}, '', '/login');
+      }
+    } else if (isAuthenticated && currentPath === '/login') {
+      const target = isAdmin
+        ? '/dashboard'
+        : isStationManager
+        ? '/station'
+        : isExpeditionLeader
+        ? '/expedition-leader'
+        : isLogisticsCommander
+        ? '/logistics-command'
+        : '/member';
+      setCurrentPath(target);
+      if (window.location.pathname !== target) {
+        window.history.pushState({}, '', target);
+      }
+    }
+  }, [isAuthenticated, isLoadingAuth, currentPath, isAdmin, isStationManager, isExpeditionLeader, isLogisticsCommander]);
 
   const loadData = useCallback(async () => {
     if (!currentExpeditionId) return;
@@ -113,6 +159,9 @@ function MainApp() {
 
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -145,6 +194,7 @@ function MainApp() {
           if (role === 'ADMIN') handleNavigate('/dashboard');
           else if (role === 'STATION_MANAGER') handleNavigate('/station');
           else if (role === 'EXPEDITION_LEADER') handleNavigate('/expedition-leader');
+          else if (role === 'LOGISTICS_COMMANDER') handleNavigate('/logistics-command');
           else handleNavigate('/member');
         }}
       />
@@ -155,12 +205,14 @@ function MainApp() {
   const currentCargoItem =
     cargoList.find((c) => c.id.toLowerCase() === selectedCargoId.toLowerCase()) || cargoList[0];
 
+  const basePath = currentPath.split('?')[0];
+
   return (
     <AppLayout
-      currentPath={currentPath}
+      currentPath={basePath}
       onNavigate={handleNavigate}
       onRefreshData={handleRefreshAll}
-      activeAlertCount={dashboard?.kpi.activeAlerts ?? alertsList.filter((a) => a.status !== 'Resolved').length}
+      activeAlertCount={alertsList.filter((a) => a.status.toUpperCase() !== 'RESOLVED').length}
       expeditionRisk={dashboard?.kpi.overallRisk ?? 38}
     >
       {/* Dynamic Role-Aware Dashboard Router */}
@@ -174,6 +226,8 @@ function MainApp() {
           <StationManagerDashboard onNavigate={handleNavigate} />
         ) : isExpeditionLeader ? (
           <ExpeditionLeaderDashboard onNavigate={handleNavigate} />
+        ) : isLogisticsCommander ? (
+          <LogisticsCommanderDashboard onNavigate={handleNavigate} />
         ) : (
           <TeamMemberWorkspace onNavigate={handleNavigate} />
         )
@@ -195,22 +249,58 @@ function MainApp() {
         <ExpeditionLeaderDashboard onNavigate={handleNavigate} />
       )}
 
-      {(currentPath === '/member' || currentPath === '/field') && (
+      {currentPath === '/logistics-command' && (
+        <LogisticsCommanderDashboard onNavigate={handleNavigate} />
+      )}
+
+      {(currentPath.startsWith('/logistics') || currentPath.startsWith('/requirements')) && (
+        <LogisticsHub
+          initialTab={
+            currentPath.includes('tab=finalized')
+              ? 'finalized'
+              : currentPath.includes('tab=tracking')
+              ? 'tracking'
+              : currentPath.includes('tab=procurement') || currentPath.includes('tab=suppliers')
+              ? 'procurement'
+              : 'requirements'
+          }
+          onNavigate={handleNavigate}
+        />
+      )}
+
+      {basePath === '/live-map' && (
+        <LiveMapPage onNavigate={handleNavigate} />
+      )}
+
+      {basePath === '/mission-planning' && (
+        <MissionPlanningPage onNavigate={handleNavigate} />
+      )}
+
+      {(basePath === '/member' || basePath === '/field') && (
         <TeamMemberWorkspace onNavigate={handleNavigate} />
       )}
 
-      {currentPath === '/expeditions' && (
+      {basePath === '/expeditions' && (
         <ExpeditionListPage
+          onNavigate={handleNavigate}
           onSelectExpedition={(id) => {
             switchExpedition(id);
-            handleNavigate('/dashboard');
+            handleNavigate(`/expeditions/${id}`);
           }}
           onCreateNew={() => handleNavigate('/expeditions/new')}
         />
       )}
 
+      {basePath.startsWith('/expeditions/') && basePath !== '/expeditions/new' && (
+        <ExpeditionDetailPage
+          expeditionId={basePath.replace('/expeditions/', '')}
+          onNavigate={handleNavigate}
+          onBack={() => handleNavigate('/expeditions')}
+        />
+      )}
+
       {/* Critical Role Gate: ONLY ADMIN CAN CREATE AN EXPEDITION */}
-      {currentPath === '/expeditions/new' && (
+      {basePath === '/expeditions/new' && (
         (!canCreateExpedition && !isAdmin) ? (
           <div className="bg-white p-8 rounded-2xl border border-rose-200 text-center space-y-3 shadow-sm">
             <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
@@ -238,14 +328,14 @@ function MainApp() {
         )
       )}
 
-      {currentPath === '/expedition' && (
+      {basePath === '/expedition' && (
         <ExpeditionPlanning
           expedition={dashboard?.expedition || currentExpedition || null}
           onNavigate={handleNavigate}
         />
       )}
 
-      {currentPath === '/cargo' && (
+      {basePath === '/cargo' && (
         <CargoTracking
           cargoList={cargoList}
           onSelectCargo={handleSelectCargo}
@@ -253,7 +343,7 @@ function MainApp() {
         />
       )}
 
-      {currentPath.startsWith('/cargo/') && currentCargoItem && (
+      {basePath.startsWith('/cargo/') && currentCargoItem && (
         <CargoDetail
           cargo={currentCargoItem}
           onBack={() => handleNavigate('/cargo')}
@@ -262,7 +352,7 @@ function MainApp() {
         />
       )}
 
-      {currentPath === '/inventory' && (
+      {basePath === '/inventory' && (
         <InventoryIntelligence
           inventoryList={inventoryList}
           onNavigate={handleNavigate}
@@ -270,30 +360,28 @@ function MainApp() {
         />
       )}
 
-      {currentPath === '/assets' && (
+      {basePath === '/assets' && (
         <AssetManagement
           assetsList={assetsList}
           onRefreshData={handleRefreshAll}
         />
       )}
 
-      {currentPath === '/personnel' && (
+      {basePath === '/personnel' && (
         <PersonnelMovement
           personnelList={personnelList}
           onRefreshData={handleRefreshAll}
+          onNavigate={handleNavigate}
         />
       )}
 
-      {currentPath === '/movements' && (
+      {basePath === '/movements' && (
         <MovementsPage />
       )}
 
-      {currentPath === '/stations' && (
+      {(basePath === '/stations' || basePath.startsWith('/stations/')) && (
         <StationOverview
-          stations={dashboard?.stations || []}
-          inventoryList={inventoryList}
-          assetsList={assetsList}
-          personnelList={personnelList}
+          initialStationId={basePath.startsWith('/stations/') ? basePath.replace('/stations/', '') : undefined}
           onNavigate={handleNavigate}
         />
       )}

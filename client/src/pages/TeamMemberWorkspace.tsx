@@ -351,8 +351,8 @@ export const TeamMemberWorkspace: React.FC<TeamMemberWorkspaceProps> = ({ onNavi
                   <span className="font-extrabold text-slate-900">{currentExpedition?.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Expedition Code:</span>
-                  <span className="font-mono font-bold text-blue-600">{currentExpedition?.code}</span>
+                  <span className="text-slate-500">Mission Type:</span>
+                  <span className="font-semibold text-slate-800">{currentExpedition?.type || 'Field Research'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Expedition Leader:</span>

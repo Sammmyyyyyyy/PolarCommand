@@ -238,7 +238,7 @@ export const ExpeditionLeaderDashboard: React.FC<ExpeditionLeaderDashboardProps>
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Code: <span className="font-mono font-bold text-slate-700">{currentExpedition?.code || 'EXP-2026-01'}</span> • Leader:{' '}
+              Mission: <span className="font-semibold text-slate-700">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</span> • Leader:{' '}
               <span className="font-semibold text-slate-700">{currentUser?.name}</span>
             </p>
           </div>
@@ -254,7 +254,7 @@ export const ExpeditionLeaderDashboard: React.FC<ExpeditionLeaderDashboardProps>
             >
               {expeditions.map((exp) => (
                 <option key={exp.id} value={exp.id}>
-                  {exp.name} ({exp.code})
+                  {exp.title || exp.name}
                 </option>
               ))}
             </select>
@@ -595,8 +595,8 @@ export const ExpeditionLeaderDashboard: React.FC<ExpeditionLeaderDashboardProps>
                       <tr key={asset.id} className="hover:bg-slate-50/80 transition">
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-900">{asset.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {asset.serialNumber || asset.assetTag || `ASSET-${asset.id.slice(0, 6)}`}
+                          <div className="text-[10px] text-slate-400">
+                            {asset.type}
                           </div>
                         </td>
                         <td className="py-3 px-4">

@@ -41,14 +41,14 @@ export const ExpeditionPlanning: React.FC<ExpeditionPlanningProps> = ({ expediti
           <div className="flex items-center space-x-2">
             <CalendarDays className="w-5 h-5 text-sky-600" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Expedition Planning ({expedition.code})
+              Mission Planning: {expedition.title || expedition.name}
             </h1>
             <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
               {expedition.status || 'Active Phase'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            {expedition.name} • Operational timeline and milestone verification
+            {expedition.missionObjective || expedition.description || 'Operational timeline and milestone verification'}
           </p>
         </div>
 
@@ -197,11 +197,11 @@ export const ExpeditionPlanning: React.FC<ExpeditionPlanningProps> = ({ expediti
           <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
             {/* Header graphic banner */}
             <div className="bg-gradient-to-r from-sky-700 to-slate-900 p-5 text-white">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-sky-300">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-300">
                 Official Expedition Dossier
               </div>
-              <h2 className="text-xl font-extrabold mt-0.5">{expedition.code}</h2>
-              <p className="text-xs text-slate-200 mt-1">{expedition.title || expedition.name}</p>
+              <h2 className="text-xl font-extrabold mt-0.5">{expedition.title || expedition.name}</h2>
+              <p className="text-xs text-slate-200 mt-1">{expedition.type || 'Field Mission'} • {expedition.origin} ➔ {expedition.destination}</p>
             </div>
 
             {/* Content Stats Grid */}

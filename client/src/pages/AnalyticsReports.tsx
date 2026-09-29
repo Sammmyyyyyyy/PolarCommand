@@ -83,8 +83,7 @@ export const AnalyticsReports: React.FC = () => {
   const handleExportCSV = () => {
     const rows = [
       ['Metric', 'Value'],
-      ['Expedition Code', currentExpedition?.code || 'INPEX-2027'],
-      ['Expedition Name', currentExpedition?.name || 'Antarctic Expedition'],
+      ['Mission', currentExpedition?.title || currentExpedition?.name || 'Antarctic Expedition'],
       ['Overall Risk Index', String(dashboard?.kpi.overallRisk ?? 38)],
       ['Risk Level', dashboard?.kpi.riskLevel ?? 'NORMAL'],
       ['Total Personnel', String(dashboard?.kpi.personnel ?? 42)],
@@ -98,7 +97,7 @@ export const AnalyticsReports: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `PolarCommand_Report_${currentExpedition?.code || 'Export'}.csv`);
+    link.setAttribute('download', `PolarCommand_Report_${(currentExpedition?.title || 'Mission').replace(/\s+/g, '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -106,32 +105,32 @@ export const AnalyticsReports: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header matching Screen 12 */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
         <div>
           <div className="flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-sky-600" />
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               Analytics & Executive Reports
             </h1>
-            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-bold border border-sky-200 font-mono">
-              {currentExpedition?.code || 'INPEX-2027'}
+            <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 text-xs font-medium border border-sky-200">
+              {currentExpedition?.type || 'Field Mission'}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Logistical throughput, risk trajectories, resource balance, and mission readiness indicators for{' '}
-            <strong className="text-slate-800">{currentExpedition?.name || 'Active Expedition'}</strong>
+          <p className="text-xs text-slate-500 mt-1">
+            Logistical throughput, risk trajectories, resource balance, and operational reporting for{' '}
+            <strong className="text-slate-800 font-medium">{currentExpedition?.title || currentExpedition?.name || 'Active Mission'}</strong>
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 shadow-2xs">
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             <span>Season 2026-2028</span>
           </div>
           <button
             onClick={handleExportCSV}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-xs transition"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs transition"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export Report (CSV)</span>
@@ -139,16 +138,45 @@ export const AnalyticsReports: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 Minimal Analytics Charts matching Screen 12 */}
+      {/* Operational Domain Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Mission Risk Index</div>
+          <div className={`text-xl font-bold mt-0.5 ${(dashboard?.kpi.overallRisk ?? 38) > 60 ? 'text-rose-600' : 'text-slate-900'}`}>
+            {dashboard?.kpi.overallRisk ?? 38} <span className="text-xs font-normal text-slate-400">/ 100</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-0.5">{dashboard?.kpi.riskLevel || 'Nominal Factor'}</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Deployed Personnel</div>
+          <div className="text-xl font-bold text-sky-700 mt-0.5">{dashboard?.kpi.personnel ?? 42}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Active polar field staff</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Cargo Consignments</div>
+          <div className="text-xl font-bold text-slate-900 mt-0.5">{dashboard?.kpi.cargoShipments ?? 187}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Dispatched & on-ice</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="text-[11px] font-medium text-slate-500">Inventory Readiness</div>
+          <div className="text-xl font-bold text-emerald-600 mt-0.5">{dashboard?.kpi.inventoryReadiness ?? 94}%</div>
+          <div className="text-[11px] text-emerald-600/80 mt-0.5">Buffer capacity nominal</div>
+        </div>
+      </div>
+
+      {/* 4 Analytics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Cargo Movement */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
+        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div>
-              <div className="font-extrabold text-sm text-slate-900">Cargo Movement & Throughput</div>
+              <div className="font-semibold text-sm text-slate-900">Cargo Movement & Throughput</div>
               <div className="text-[11px] text-slate-500">Monthly consignments dispatched vs arrived</div>
             </div>
-            <span className="text-xs font-mono font-bold text-sky-700">
+            <span className="text-xs font-mono font-medium text-sky-700">
               {dashboard?.kpi.cargoShipments ?? 187} Tracked
             </span>
           </div>
@@ -169,16 +197,16 @@ export const AnalyticsReports: React.FC = () => {
         </div>
 
         {/* Chart 2: Real Authenticated Risk Snapshots History */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
+        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div>
-              <div className="font-extrabold text-sm text-slate-900">Expedition Risk History</div>
+              <div className="font-semibold text-sm text-slate-900">Expedition Risk History</div>
               <div className="text-[11px] text-slate-500">
                 {riskHistory.length > 0 ? 'Live database RiskSnapshot telemetry' : 'Time-series baseline'}
               </div>
             </div>
             <span
-              className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+              className={`text-xs font-mono font-medium px-2 py-0.5 rounded ${
                 (dashboard?.kpi.overallRisk ?? 38) > 60
                   ? 'bg-rose-50 text-rose-700'
                   : 'bg-emerald-50 text-emerald-700'
@@ -196,7 +224,7 @@ export const AnalyticsReports: React.FC = () => {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '11px' }} />
                 <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                <Line type="monotone" dataKey="risk" stroke="#e11d48" strokeWidth={2.5} name="Total Expedition Risk" dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="risk" stroke="#e11d48" strokeWidth={2} name="Total Expedition Risk" dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 <Line type="monotone" dataKey="cargoRisk" stroke="#0284c7" strokeWidth={1.5} strokeDasharray="3 3" name="Cargo Factor" dot={false} />
                 <Line type="monotone" dataKey="inventoryRisk" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" name="Inventory Factor" dot={false} />
               </LineChart>
@@ -205,13 +233,13 @@ export const AnalyticsReports: React.FC = () => {
         </div>
 
         {/* Chart 3: Inventory Readiness by Category */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
+        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div>
-              <div className="font-extrabold text-sm text-slate-900">Inventory Readiness by Category</div>
+              <div className="font-semibold text-sm text-slate-900">Inventory Readiness by Category</div>
               <div className="text-[11px] text-slate-500">Threshold buffer percentage across categories</div>
             </div>
-            <span className="text-xs font-mono font-bold text-emerald-700">6 Categories</span>
+            <span className="text-xs font-mono font-medium text-emerald-700">6 Categories</span>
           </div>
 
           <div className="h-60 w-full pt-2">
@@ -228,13 +256,13 @@ export const AnalyticsReports: React.FC = () => {
         </div>
 
         {/* Chart 4: Mission Readiness Summary Card */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div>
-              <div className="font-extrabold text-sm text-slate-900">Mission Readiness Summary</div>
+              <div className="font-semibold text-sm text-slate-900">Mission Readiness Summary</div>
               <div className="text-[11px] text-slate-500">Autonomous risk classification</div>
             </div>
-            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-xs font-mono">
+            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium text-xs font-mono">
               Operational
             </span>
           </div>
@@ -242,26 +270,26 @@ export const AnalyticsReports: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-800 block">Antarctic Wintering Status</span>
+                <span className="font-medium text-slate-800 block">Antarctic Wintering Status</span>
                 <span className="text-[11px] text-slate-500">Bharati & Maitri life support systems</span>
               </div>
-              <span className="text-emerald-700 font-bold">100% Nominal</span>
+              <span className="text-emerald-700 font-semibold">100% Nominal</span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-800 block">Fuel Autonomy Buffer</span>
+                <span className="font-medium text-slate-800 block">Fuel Autonomy Buffer</span>
                 <span className="text-[11px] text-slate-500">Station power generation diesel reserves</span>
               </div>
-              <span className="text-slate-900 font-mono font-bold">185 Days</span>
+              <span className="text-slate-900 font-mono font-medium">185 Days</span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-800 block">Medical Triage Readiness</span>
+                <span className="font-medium text-slate-800 block">Medical Triage Readiness</span>
                 <span className="text-[11px] text-slate-500">Surgery theater, ventilators & cold chain plasma</span>
               </div>
-              <span className="text-sky-700 font-bold">
+              <span className="text-sky-700 font-semibold">
                 {dashboard?.kpi.overallRisk && dashboard.kpi.overallRisk > 60 ? 'Surge Active' : 'Normal'}
               </span>
             </div>

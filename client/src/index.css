@@ -174,3 +174,9 @@ body {
 .polar-table-row:hover {
   background-color: #F8FAFC;
 }
+
+/* Tone down heavy typography to crisp professional operations standards (600-700) */
+.font-black,
+.font-extrabold {
+  font-weight: 700 !important;
+}

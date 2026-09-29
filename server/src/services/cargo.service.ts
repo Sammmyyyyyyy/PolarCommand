@@ -106,6 +106,8 @@ export class CargoService {
       });
 
       for (const req of linkedRequests) {
+        if (!req.itemId || !req.station || !req.item) continue;
+
         await prisma.inventoryItem.update({
           where: { id: req.itemId },
           data: {
