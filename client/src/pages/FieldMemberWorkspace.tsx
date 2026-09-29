@@ -39,6 +39,7 @@ import {
   Movement,
 } from '../types';
 import {
+  API_BASE,
   fetchTasks,
   updateTaskStatus,
   recordCheckIn,
@@ -163,7 +164,7 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
     const res = await OfflineSyncService.drainQueue({
       updateTaskStatus: async (tId, status, notes, obs) => updateTaskStatus(currentExpeditionId!, tId, status, { notes, fieldObservations: obs }),
       recordCheckIn: async (expId, pId, data) => recordCheckIn(expId, pId, data),
-      createIncident: async (expId, data) => fetch(`/api/expeditions/${expId}/incidents`, {
+      createIncident: async (expId, data) => fetch(`${API_BASE}/expeditions/${expId}/incidents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('polar_auth_token')}` },
         body: JSON.stringify(data),
@@ -1016,7 +1017,7 @@ export const FieldMemberWorkspace: React.FC<FieldMemberWorkspaceProps> = ({ onNa
                       });
                       alert('Incident report queued in local buffer. Will transmit once connection restores.');
                     } else {
-                      await fetch(`/api/expeditions/${currentExpeditionId}/incidents`, {
+                      await fetch(`${API_BASE}/expeditions/${currentExpeditionId}/incidents`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('polar_auth_token')}` },
                         body: JSON.stringify(payload),

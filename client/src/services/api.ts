@@ -30,7 +30,7 @@ import {
   Notification,
 } from '../types';
 
-const API_BASE = '/api';
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('polar_auth_token');

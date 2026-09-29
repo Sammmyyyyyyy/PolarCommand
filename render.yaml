@@ -1,0 +1,26 @@
+databases:
+  - name: polar-command-db
+    databaseName: polar_command
+    user: polar_command
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: polar-command-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: server
+    buildCommand: npm ci --include=dev && npm run prisma:generate:pg && npm run build
+    startCommand: npm run db:push:pg && npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: polar-command-db
+          property: connectionString

@@ -1,0 +1,16 @@
+# Dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vercel/
+server/prisma/*.db
+
+# Local environment files (keep example templates)
+.env
+.env.*
+!.env.example
+
+# Logs and local tooling
+*.log
+.vite/
