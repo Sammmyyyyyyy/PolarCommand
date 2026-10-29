@@ -32,9 +32,11 @@ import {
 
 const DEFAULT_API_BASE = 'https://polar-command-api-n4tk.onrender.com/api';
 const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const isExpiredRenderApiBase =
+  configuredApiBase?.replace(/\/+$/, '') === 'https://polar-command-api.onrender.com/api';
 const API_BASE_VALUE = import.meta.env.DEV
   ? configuredApiBase || '/api'
-  : configuredApiBase && !configuredApiBase.startsWith('/')
+  : configuredApiBase && !configuredApiBase.startsWith('/') && !isExpiredRenderApiBase
     ? configuredApiBase
     : DEFAULT_API_BASE;
 
