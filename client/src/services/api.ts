@@ -30,7 +30,15 @@ import {
   Notification,
 } from '../types';
 
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+const DEFAULT_API_BASE = 'https://polar-command-api-n4tk.onrender.com/api';
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_VALUE = import.meta.env.DEV
+  ? configuredApiBase || '/api'
+  : configuredApiBase && !configuredApiBase.startsWith('/')
+    ? configuredApiBase
+    : DEFAULT_API_BASE;
+
+export const API_BASE = API_BASE_VALUE.replace(/\/$/, '');
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('polar_auth_token');
@@ -310,16 +318,6 @@ export async function createInventoryItem(expeditionId: string, data: any): Prom
 
 export const createInventory = createInventoryItem;
 
-export async function reallocateInventory(expeditionId: string, data: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/inventory/reallocate`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to reallocate stock');
-  return res.json();
-}
-
 export async function updateInventoryItem(
   expeditionIdOrItemId: string,
   idOrData: any,
@@ -498,16 +496,6 @@ export async function updateMovementStatus(expeditionId: string, id: string, sta
   return res.json();
 }
 
-export async function updateMovement(expeditionId: string, id: string, data: any): Promise<Movement> {
-  const res = await fetch(`${API_BASE}/expeditions/${expeditionId}/movements/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to update movement');
-  return res.json();
-}
-
 // -------------------------------------------------------------
 // Incidents & Emergency Response
 // -------------------------------------------------------------
@@ -627,7 +615,7 @@ export async function executeAction(expeditionId: string, payload: any): Promise
 }
 
 export async function executeHeroAction(): Promise<any> {
-  const res = await fetch(`${API_BASE}/demo/execute-action`, {
+  const res = await fetch(`${API_BASE}/hero-action`, {
     method: 'POST',
     headers: getAuthHeaders(),
   });
@@ -636,7 +624,7 @@ export async function executeHeroAction(): Promise<any> {
 }
 
 export async function resetDemoState(): Promise<any> {
-  const res = await fetch(`${API_BASE}/demo/reset`, {
+  const res = await fetch(`${API_BASE}/reset-demo`, {
     method: 'POST',
     headers: getAuthHeaders(),
   });

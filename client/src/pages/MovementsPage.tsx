@@ -17,7 +17,7 @@ import {
   Wind,
 } from 'lucide-react';
 import { Movement } from '../types';
-import { fetchMovements, createMovement, updateMovement, applyMovementWeatherConstraint } from '../services/api';
+import { fetchMovements, createMovement, updateMovementStatus, applyMovementWeatherConstraint } from '../services/api';
 import { useExpedition } from '../context/ExpeditionContext';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/common/Modal';
@@ -96,7 +96,7 @@ export const MovementsPage: React.FC = () => {
   const handleUpdateStatus = async (id: string, status: string) => {
     if (!currentExpeditionId) return;
     try {
-      await updateMovement(currentExpeditionId, id, { status });
+      await updateMovementStatus(currentExpeditionId, id, status);
       await loadMovements();
       triggerRefresh();
     } catch (err: any) {
