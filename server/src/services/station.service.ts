@@ -5,16 +5,22 @@ import { ScopeService } from './scope.service.js';
 export class StationService {
   public static async listStations(expeditionId?: string, user?: any) {
     const where: any = {};
+    let restrictedStationIds: string[] | null = null;
 
     if (user) {
       const scope = await ScopeService.getUserScope(user);
       if (scope.isStationManager) {
+        restrictedStationIds = scope.stationIds;
         if (scope.stationIds.length > 0) {
           where.id = { in: scope.stationIds };
         } else if (scope.primaryStationId) {
           where.id = scope.primaryStationId;
         }
-      } else if (scope.isExpeditionLeader || scope.isTeamMember) {
+      } else if (scope.isTeamMember) {
+        restrictedStationIds = scope.stationIds;
+        where.id = { in: scope.stationIds };
+      } else if (scope.isExpeditionLeader) {
+        restrictedStationIds = scope.stationIds;
         where.OR = [
           { id: { in: scope.stationIds } },
           { expeditionId: { in: scope.expeditionIds } },
@@ -22,7 +28,7 @@ export class StationService {
       }
     }
 
-    if (expeditionId && expeditionId !== 'all') {
+    if (expeditionId && expeditionId !== 'all' && !restrictedStationIds) {
       where.expeditionId = expeditionId;
     }
 

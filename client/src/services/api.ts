@@ -67,6 +67,8 @@ export interface LoginPayload {
   password?: string;
   role?: string;
   stationName?: string;
+  expeditionId?: string;
+  expeditionSecretKey?: string;
 }
 
 export async function loginUser(
@@ -552,6 +554,7 @@ export async function fetchAlerts(expeditionId: string): Promise<Alert[]> {
 export async function createAlert(data: {
   expeditionId?: string;
   stationId?: string;
+  message?: string;
   type?: string;
   severity?: string;
   title: string;
@@ -568,7 +571,10 @@ export async function createAlert(data: {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Failed to create alert');
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to create alert');
+  }
   return res.json();
 }
 

@@ -4,9 +4,12 @@ import { AlertService } from './alert.service.js';
 import { AuditService } from './audit.service.js';
 import { OrganizationService } from './organization.service.js';
 import { ScopeService } from './scope.service.js';
+import { AuthService } from './auth.service.js';
+import { normalizeRole } from '../middleware/authorization.js';
 
 export interface CreateExpeditionInput {
   code: string;
+  secretKey: string;
   title: string;
   type: string;
   missionObjective: string;
@@ -74,10 +77,12 @@ export interface CreateExpeditionInput {
 export class ExpeditionService {
   public static async listExpeditions(organizationId?: string, user?: any) {
     const where: any = {};
+    let userScope: Awaited<ReturnType<typeof ScopeService.getUserScope>> | null = null;
     if (organizationId) where.organizationId = organizationId;
 
     if (user) {
       const scope = await ScopeService.getUserScope(user);
+      userScope = scope;
       if (scope.isStationManager) {
         // Only expeditions operating from or linked to station
         where.OR = [
@@ -86,9 +91,7 @@ export class ExpeditionService {
         ];
       } else if (scope.isExpeditionLeader || scope.isTeamMember) {
         // Only assigned expedition(s)
-        if (scope.expeditionIds.length > 0) {
-          where.id = { in: scope.expeditionIds };
-        }
+        where.id = { in: scope.expeditionIds };
       }
     }
 
@@ -126,9 +129,14 @@ export class ExpeditionService {
           if (!parsedStationIds.includes(st.id)) parsedStationIds.push(st.id);
         }
       }
+      const { secretKeyHash: _secretKeyHash, ...safeExpedition } = exp;
+      const scopedStations = userScope && (userScope.isTeamMember || userScope.isStationManager)
+        ? exp.stations.filter((station: any) => userScope!.stationIds.includes(station.id))
+        : exp.stations;
       return {
-        ...exp,
-        stationIds: parsedStationIds,
+        ...safeExpedition,
+        stations: scopedStations,
+        stationIds: parsedStationIds.filter((stationId) => !userScope || (!userScope.isTeamMember && !userScope.isStationManager) || userScope.stationIds.includes(stationId)),
       };
     });
   }
@@ -175,13 +183,24 @@ export class ExpeditionService {
         if (!parsedStationIds.includes(st.id)) parsedStationIds.push(st.id);
       }
     }
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = exp;
     return {
-      ...exp,
+      ...safeExpedition,
       stationIds: parsedStationIds,
     };
   }
 
   public static async createExpedition(input: CreateExpeditionInput, user?: any) {
+    if (!input.secretKey || input.secretKey.trim().length < 8) {
+      throw new Error('Expedition Secret Key must be at least 8 characters long');
+    }
+    const commander = input.commanderId
+      ? await prisma.user.findUnique({ where: { id: input.commanderId } })
+      : null;
+    if (!commander || normalizeRole(commander.role) !== 'EXPEDITION_LEADER') {
+      throw new Error('Select an existing Expedition Leader account before creating the expedition');
+    }
+
     const existing = await prisma.expedition.findUnique({ where: { code: input.code.toUpperCase() } });
     if (existing) {
       throw new Error(`Expedition with code ${input.code} already exists`);
@@ -202,8 +221,10 @@ export class ExpeditionService {
         title: input.title,
         type: input.type,
         missionObjective: input.missionObjective,
-        commanderId: input.commanderId || user?.id || null,
-        commanderName: input.commanderName || user?.name || 'Commander',
+        commanderId: commander.id,
+        leaderId: commander.id,
+        commanderName: input.commanderName || commander.name,
+        secretKeyHash: await AuthService.hashPassword(input.secretKey.trim()),
         organizationId: orgId,
         status,
         lifecycleStatus: lifecycle,
@@ -291,6 +312,26 @@ export class ExpeditionService {
       }
     }
 
+    const expeditionIds = new Set<string>();
+    const stationIds = new Set<string>(createdStations.map((station) => station.id));
+    try {
+      const existingExpeditionIds = JSON.parse(commander.expeditionIdsJson || '[]');
+      if (Array.isArray(existingExpeditionIds)) existingExpeditionIds.forEach((id: string) => expeditionIds.add(id));
+    } catch {}
+    try {
+      const existingStationIds = JSON.parse(commander.stationIdsJson || '[]');
+      if (Array.isArray(existingStationIds)) existingStationIds.forEach((id: string) => stationIds.add(id));
+    } catch {}
+    expeditionIds.add(expedition.id);
+    await prisma.user.update({
+      where: { id: commander.id },
+      data: {
+        assignedExpeditionId: expedition.id,
+        expeditionIdsJson: JSON.stringify(Array.from(expeditionIds)),
+        stationIdsJson: JSON.stringify(Array.from(stationIds)),
+      },
+    });
+
     // 2. Create Initial Crew / Personnel
     const createdPersonnel: any[] = [];
     if (input.initialCrew && input.initialCrew.length > 0) {
@@ -314,9 +355,16 @@ export class ExpeditionService {
             contactInfo: c.contactInfo || 'VHF Ch-16 / Iridium 8816',
           },
         });
+        await AuthService.ensurePersonnelLoginUser(p, expedition);
         createdPersonnel.push(p);
         crewIdx++;
       }
+    }
+    if (createdPersonnel.length > 0) {
+      await prisma.expedition.update({
+        where: { id: expedition.id },
+        data: { memberIdsJson: JSON.stringify(createdPersonnel.map((person) => person.memberId)) },
+      });
     }
 
     // 3. Create Initial Assets
@@ -412,7 +460,11 @@ export class ExpeditionService {
       reason: `Commissioned expedition ${expedition.code} (${expedition.title}) [Lifecycle: ${lifecycle}] with ${createdStations.length} stations and ${createdPersonnel.length} personnel.`,
     });
 
-    return this.getExpedition(expedition.id);
+    const created = await this.getExpedition(expedition.id);
+    return {
+      ...created,
+      createdMemberIds: createdPersonnel.map((person) => person.memberId),
+    };
   }
 
   public static async publishExpedition(id: string, user?: any) {
@@ -450,7 +502,8 @@ export class ExpeditionService {
       reason: `Expedition ${exp.code} explicitly published and transitioned to operational ACTIVE lifecycle.`,
     });
 
-    return updated;
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = updated;
+    return safeExpedition;
   }
 
   public static async updateLifecycle(
@@ -492,7 +545,8 @@ export class ExpeditionService {
       reason: `Expedition lifecycle status shifted to ${lifecycleStatus}`,
     });
 
-    return updated;
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = updated;
+    return safeExpedition;
   }
 
   public static async updateExpedition(id: string, data: Partial<CreateExpeditionInput>, user?: any) {
@@ -521,7 +575,8 @@ export class ExpeditionService {
       reason: 'Updated expedition configuration and operational parameters',
     });
 
-    return updated;
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = updated;
+    return safeExpedition;
   }
 
   public static async deleteExpedition(id: string, user?: any) {
@@ -535,10 +590,11 @@ export class ExpeditionService {
       entityId: id,
       reason: `Decommissioned and deleted expedition ${deleted.code}`,
     });
-    return deleted;
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = deleted;
+    return safeExpedition;
   }
 
-  public static async getDashboardSummary(expeditionId: string) {
+  public static async getDashboardSummary(expeditionId: string, user?: any) {
     const expedition = await prisma.expedition.findUnique({
       where: { id: expeditionId },
       include: {
@@ -562,6 +618,12 @@ export class ExpeditionService {
     if (!expedition) {
       throw new Error(`Expedition ${expeditionId} not found`);
     }
+
+    const userScope = user ? await ScopeService.getUserScope(user) : null;
+    const visibleStations = userScope && (userScope.isTeamMember || userScope.isStationManager)
+      ? expedition.stations.filter((station) => userScope.stationIds.includes(station.id))
+      : expedition.stations;
+    const { secretKeyHash: _secretKeyHash, ...safeExpedition } = expedition;
 
     // Calculations
     const personnelCount = expedition.personnel.length;
@@ -605,7 +667,7 @@ export class ExpeditionService {
     const recentActivity = await AuditService.getRecentActivity(expeditionId, 10);
 
     return {
-      expedition,
+      expedition: { ...safeExpedition, stations: visibleStations },
       kpi: {
         personnel: personnelCount,
         personnelInTransit,
@@ -634,7 +696,7 @@ export class ExpeditionService {
           completed: completedTasks,
         },
       },
-      stationsSummary: expedition.stations.map((s) => ({
+      stationsSummary: visibleStations.map((s) => ({
         id: s.id,
         name: s.name,
         code: s.code,

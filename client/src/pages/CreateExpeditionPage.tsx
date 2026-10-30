@@ -52,6 +52,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
   const [startDate, setStartDate] = useState('2028-03-01');
   const [endDate, setEndDate] = useState('2029-03-31');
   const [notes, setNotes] = useState('Joint international polar institute scientific expedition.');
+  const [secretKey, setSecretKey] = useState('');
 
   // Step 2: Command
   const [commanderId, setCommanderId] = useState('');
@@ -263,7 +264,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
     fetchAllUsers()
       .then((u) => {
         setUsers(u);
-        const commander = u.find((item) => item.role === 'COMMANDER');
+        const commander = u.find((item) => item.role === 'EXPEDITION_LEADER' || item.role === 'COMMANDER');
         if (commander) {
           setCommanderId(commander.id);
           setCommanderName(commander.name);
@@ -290,9 +291,9 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
     const warns: string[] = [];
 
     // 1. COMMAND
-    const hasCommander = !!(commanderName && commanderName.trim().length > 0);
+    const hasCommander = !!commanderId && users.some((item) => item.id === commanderId && (item.role === 'EXPEDITION_LEADER' || item.role === 'COMMANDER'));
     if (!hasCommander) {
-      blocking.push('No Expedition Commander assigned.');
+      blocking.push('Select an existing Expedition Leader account so the expedition can be linked to a login.');
     }
 
     // 2. PERSONNEL
@@ -375,10 +376,16 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
   const readiness = evaluateLocalReadiness();
 
   const handleCommission = async (publishImmediately: boolean) => {
+    if (secretKey.trim().length < 8) {
+      alert('Create an Expedition Secret Key with at least 8 characters before commissioning.');
+      setStep(1);
+      return;
+    }
     try {
       setIsSubmitting(true);
       const payload = {
         code,
+        secretKey: secretKey.trim(),
         title,
         type,
         missionObjective,
@@ -440,6 +447,10 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
       };
 
       const created = await createExpedition(payload);
+
+      if (created.createdMemberIds?.length) {
+        alert(`Expedition created. Member login IDs: ${created.createdMemberIds.join(', ')}. Share these IDs and the Expedition Secret Key with the assigned crew.`);
+      }
 
       if (publishImmediately) {
         await publishExpedition(created.id);
@@ -646,6 +657,24 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-100 focus:bg-white"
               />
             </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+              <label className="block text-xs font-semibold text-slate-800 mb-1">
+                Expedition Secret Key *
+              </label>
+              <input
+                type="password"
+                minLength={8}
+                required
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+                placeholder="Create a key to share with this expedition's leader and members"
+                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-100"
+              />
+              <p className="text-[11px] text-amber-900/80 mt-1.5">
+                Minimum 8 characters. It is stored as a hash and required at expedition leader/member sign-in.
+              </p>
+            </div>
           </div>
         )}
 
@@ -688,7 +717,7 @@ export const CreateExpeditionPage: React.FC<CreateExpeditionPageProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-100 focus:bg-white font-medium"
                   >
                     <option value="">Select Commander from Organization</option>
-                    {users.map((u) => (
+                    {users.filter((u) => u.role === 'EXPEDITION_LEADER' || u.role === 'COMMANDER').map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name} — {u.role} ({u.email})
                       </option>

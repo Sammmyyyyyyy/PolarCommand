@@ -57,6 +57,7 @@ model User {
 model Expedition {
   id                 String             @id @default(uuid())
   code               String             @unique
+  secretKeyHash      String?
   title              String
   type               String
   missionObjective   String

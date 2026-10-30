@@ -9,9 +9,11 @@ import {
   CheckSquare,
   Zap,
   Play,
+  Plus,
+  X,
 } from 'lucide-react';
 import { Alert, ActionItem } from '../types';
-import { acknowledgeAlert, resolveAlert, dismissAlert, executeAction, executeHeroAction } from '../services/api';
+import { acknowledgeAlert, resolveAlert, dismissAlert, executeAction, executeHeroAction, createAlert } from '../services/api';
 import { useExpedition } from '../context/ExpeditionContext';
 import { useAuth } from '../context/AuthContext';
 import { getUserScope } from '../utils/userScope';
@@ -30,13 +32,20 @@ export const AlertsActionCenter: React.FC<AlertsActionCenterProps> = ({
   onNavigate,
 }) => {
   const { currentExpeditionId, currentExpedition, triggerRefresh } = useExpedition();
-  const { currentUser, canExecuteActions, canEditOperationalData } = useAuth();
+  const { currentUser, currentRole, canExecuteActions, canEditOperationalData, hasPermission } = useAuth();
   const scope = getUserScope(currentUser);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
+  const [isCreateAlertOpen, setIsCreateAlertOpen] = useState(false);
+  const [isCreatingAlert, setIsCreatingAlert] = useState(false);
+  const [newAlertTitle, setNewAlertTitle] = useState('');
+  const [newAlertMessage, setNewAlertMessage] = useState('');
+  const [newAlertSeverity, setNewAlertSeverity] = useState('HIGH');
+  const [newAlertStationId, setNewAlertStationId] = useState('');
+  const canCreateAlert = hasPermission('alert:create') && ['ADMIN', 'STATION_MANAGER', 'EXPEDITION_LEADER', 'TEAM_MEMBER'].includes(currentRole);
 
   const getAlertCategory = (a: Alert): string => {
     const src = (a.source || '').toUpperCase();
@@ -62,6 +71,41 @@ export const AlertsActionCenter: React.FC<AlertsActionCenterProps> = ({
       selectedStatus === 'All' || a.status.toLowerCase() === selectedStatus.toLowerCase();
     return matchesCategory && matchesSeverity && matchesStatus;
   });
+
+  const handleCreateAlert = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentExpeditionId || !newAlertTitle.trim() || !newAlertMessage.trim()) return;
+
+    try {
+      setIsCreatingAlert(true);
+      const selectedStation = currentExpedition?.stations?.find((station) => station.id === newAlertStationId);
+      await createAlert({
+        expeditionId: currentExpeditionId,
+        stationId: newAlertStationId || undefined,
+        type: 'OPERATIONAL',
+        severity: newAlertSeverity,
+        title: newAlertTitle.trim(),
+        message: newAlertMessage.trim(),
+        source: `User Report — ${currentUser?.name || 'Mission User'}`,
+        affectedEntity: selectedStation?.name || currentExpedition?.title || 'Expedition operations',
+        reason: newAlertMessage.trim(),
+        impact: 'Requires review by the expedition team.',
+        recommendedAction: 'Review the report and coordinate an appropriate response.',
+        status: 'ACTIVE',
+      });
+      setNewAlertTitle('');
+      setNewAlertMessage('');
+      setNewAlertSeverity('HIGH');
+      setNewAlertStationId('');
+      setIsCreateAlertOpen(false);
+      triggerRefresh();
+      onRefreshData?.();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create alert');
+    } finally {
+      setIsCreatingAlert(false);
+    }
+  };
 
   const handleAcknowledge = async (id: string) => {
     if (!currentExpeditionId) return;
@@ -135,17 +179,77 @@ export const AlertsActionCenter: React.FC<AlertsActionCenterProps> = ({
           </p>
         </div>
 
-        {/* Global Mitigation Trigger */}
-        {canExecuteActions && (
-          <button
-            onClick={handleExecuteHeroMitigation}
-            className="flex items-center space-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Execute Recommended Mitigation</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canCreateAlert && (
+            <button
+              onClick={() => setIsCreateAlertOpen(true)}
+              className="flex items-center space-x-2 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-xs transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Raise Alert</span>
+            </button>
+          )}
+          {canExecuteActions && (
+            <button
+              onClick={handleExecuteHeroMitigation}
+              className="flex items-center space-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Execute Recommended Mitigation</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {isCreateAlertOpen && (
+        <div className="fixed inset-0 z-[3000] bg-slate-950/50 flex items-center justify-center p-4">
+          <form onSubmit={handleCreateAlert} className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Raise an Expedition Alert</h2>
+                <p className="text-xs text-slate-500 mt-1">This alert will be visible within your assigned expedition scope.</p>
+              </div>
+              <button type="button" onClick={() => setIsCreateAlertOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="Close alert form">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Alert title</label>
+              <input required maxLength={120} value={newAlertTitle} onChange={(e) => setNewAlertTitle(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="Short summary of the issue" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Severity</label>
+                <select value={newAlertSeverity} onChange={(e) => setNewAlertSeverity(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                  <option value="CRITICAL">Critical</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Station</label>
+                <select value={newAlertStationId} onChange={(e) => setNewAlertStationId(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                  <option value="">Expedition-wide</option>
+                  {(currentExpedition?.stations || []).filter((station) => scope.canAccessStation(station.id)).map((station) => (
+                    <option key={station.id} value={station.id}>{station.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Details</label>
+              <textarea required maxLength={1200} rows={4} value={newAlertMessage} onChange={(e) => setNewAlertMessage(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm resize-y" placeholder="Describe what happened and what may be affected" />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              <button type="button" onClick={() => setIsCreateAlertOpen(false)} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold">Cancel</button>
+              <button type="submit" disabled={isCreatingAlert || !currentExpeditionId} className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50">
+                {isCreatingAlert ? 'Creating…' : 'Create Alert'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Operational Metric Summary Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

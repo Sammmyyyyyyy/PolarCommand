@@ -22,6 +22,7 @@ export type Permission =
   | 'tracking:view_team'
   | 'incident:create'
   | 'incident:manage'
+  | 'alert:create'
   | 'simulation:run'
   | 'user:manage'
   | 'audit:read';
@@ -59,6 +60,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'tracking:view_team',
     'incident:create',
     'incident:manage',
+    'alert:create',
     'simulation:run',
     'user:manage',
     'audit:read',
@@ -86,10 +88,12 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'inventory:request_restock',
     'cargo:read',
     'personnel:read',
+    'personnel:manage',
     'equipment:read',
     'tracking:read',
     'incident:create',
     'incident:manage',
+    'alert:create',
     'simulation:run',
   ],
   EXPEDITION_LEADER: [
@@ -106,6 +110,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'tracking:view_team',
     'incident:create',
     'incident:manage',
+    'alert:create',
     'simulation:run',
   ],
   TEAM_MEMBER: [
@@ -114,6 +119,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'equipment:read',
     'tracking:view_team',
     'incident:create',
+    'alert:create',
   ],
 };
 

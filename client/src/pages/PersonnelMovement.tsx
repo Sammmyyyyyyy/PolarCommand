@@ -92,6 +92,7 @@ export const PersonnelMovement: React.FC<PersonnelMovementProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newMemberForm, setNewMemberForm] = useState({
     name: '',
+    memberId: '',
     role: 'Scientist',
     stationId: 'bharati',
     specialization: 'Polar Climatology',
@@ -305,8 +306,9 @@ export const PersonnelMovement: React.FC<PersonnelMovementProps> = ({
     if (!activeExpedition?.id) return;
     try {
       setIsSubmitting(true);
-      await createPersonnel(activeExpedition.id, {
+      const createdMember = await createPersonnel(activeExpedition.id, {
         name: newMemberForm.name,
+        memberId: newMemberForm.memberId.trim() || undefined,
         role: newMemberForm.role,
         stationId: newMemberForm.stationId,
         specialization: newMemberForm.specialization,
@@ -318,6 +320,7 @@ export const PersonnelMovement: React.FC<PersonnelMovementProps> = ({
       setIsAddModalOpen(false);
       setNewMemberForm({
         name: '',
+        memberId: '',
         role: 'Scientist',
         stationId: 'bharati',
         specialization: 'Polar Climatology',
@@ -326,6 +329,7 @@ export const PersonnelMovement: React.FC<PersonnelMovementProps> = ({
       });
       triggerRefresh();
       if (onRefreshData) onRefreshData();
+      alert(`Member added. Login ID: ${createdMember.memberId}. Give them this ID, the Expedition ID, and the Expedition Secret Key.`);
     } catch (err: any) {
       alert(err.message || 'Failed to add personnel');
     } finally {
@@ -1042,6 +1046,18 @@ export const PersonnelMovement: React.FC<PersonnelMovementProps> = ({
               }
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-normal focus:outline-none focus:ring-2 focus:ring-[#0284C7] focus:bg-white transition"
             />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-medium mb-1">Member Login ID</label>
+            <input
+              type="text"
+              value={newMemberForm.memberId}
+              onChange={(e) => setNewMemberForm({ ...newMemberForm, memberId: e.target.value.toUpperCase() })}
+              placeholder="Leave blank to generate PER-###"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono focus:outline-hidden focus:ring-2 focus:ring-[#0284C7] focus:bg-white transition"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">This ID is required on the team member sign-in page.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

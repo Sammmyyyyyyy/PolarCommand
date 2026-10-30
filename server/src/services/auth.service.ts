@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '../config/database.js';
 import { ENV } from '../config/env.js';
 import { OrganizationService } from './organization.service.js';
@@ -39,6 +40,30 @@ export class AuthService {
   public static async hashPassword(password: string): Promise<string> {
     const salt = await bcrypt.genSalt(10);
     return bcrypt.hash(password, salt);
+  }
+
+  public static async ensurePersonnelLoginUser(personnel: any, expedition: any) {
+    const existing = await prisma.user.findUnique({
+      where: { assignedPersonnelId: personnel.id },
+      include: { organization: true, assignedPersonnel: true },
+    });
+    if (existing) return existing;
+
+    return prisma.user.create({
+      data: {
+        email: `member-${personnel.id}@members.polarcommand.local`,
+        name: personnel.name,
+        role: 'TEAM_MEMBER',
+        passwordHash: await this.hashPassword(randomBytes(32).toString('hex')),
+        organizationId: expedition.organizationId || null,
+        stationId: personnel.assignedStationId || null,
+        stationIdsJson: JSON.stringify(personnel.assignedStationId ? [personnel.assignedStationId] : []),
+        assignedExpeditionId: expedition.id,
+        expeditionIdsJson: JSON.stringify([expedition.id]),
+        assignedPersonnelId: personnel.id,
+      },
+      include: { organization: true, assignedPersonnel: true },
+    });
   }
 
   public static async comparePassword(password: string, hash: string): Promise<boolean> {
@@ -259,15 +284,57 @@ export class AuthService {
 
   public static async authenticate(
     identifierOrEmail: string,
-    password: string,
+    password: string | undefined,
     roleHint?: string,
-    stationNameHint?: string
+    stationNameHint?: string,
+    expeditionIdentifier?: string,
+    expeditionSecretKey?: string
   ): Promise<{ token: string; user: any } | null> {
     const cleanId = (identifierOrEmail || '').trim().toLowerCase();
     if (!cleanId) return null;
 
+    const normalizedHint = normalizeRole(roleHint);
+    const cleanExpeditionSecretKey = expeditionSecretKey?.trim();
+    const usesExpeditionCredentials =
+      Boolean(expeditionIdentifier && cleanExpeditionSecretKey && cleanExpeditionSecretKey.length >= 8) &&
+      (normalizedHint === 'EXPEDITION_LEADER' || normalizedHint === 'TEAM_MEMBER');
+    let selectedExpedition: any = null;
+    let matchedPersonnel: any = null;
+    let expeditionSecretNeedsInitialization = false;
+    if (usesExpeditionCredentials) {
+      selectedExpedition = await prisma.expedition.findFirst({
+        where: {
+          OR: [
+            { id: expeditionIdentifier },
+            { code: expeditionIdentifier?.trim().toUpperCase() },
+          ],
+        },
+      });
+      if (!selectedExpedition) return null;
+
+      if (selectedExpedition.secretKeyHash) {
+        if (!(await this.comparePassword(cleanExpeditionSecretKey!, selectedExpedition.secretKeyHash))) return null;
+      } else if (normalizedHint === 'TEAM_MEMBER') {
+        return null;
+      } else {
+        // Legacy expeditions can have their key initialized by their password-authenticated leader.
+        expeditionSecretNeedsInitialization = true;
+      }
+
+      if (normalizedHint === 'TEAM_MEMBER') {
+        const roster = await prisma.personnel.findMany({
+          where: { expeditionId: selectedExpedition.id },
+          include: { assignedStation: true },
+        });
+        matchedPersonnel = roster.find((person) => person.memberId.trim().toLowerCase() === cleanId);
+        if (!matchedPersonnel) return null;
+      }
+    }
+
     // 1. Direct email lookup
-    let user = await prisma.user.findFirst({
+    let user = matchedPersonnel
+      ? await this.ensurePersonnelLoginUser(matchedPersonnel, selectedExpedition)
+      : await prisma.user.findFirst({
       where: { email: cleanId },
       include: {
         organization: true,
@@ -309,6 +376,10 @@ export class AuthService {
         },
       });
     }
+
+    // Expedition leader sign-in must identify the linked account directly;
+    // the legacy role-based fallback could otherwise select another leader.
+    if (!user && usesExpeditionCredentials) return null;
 
     // 4. Role-based identifier matching
     if (!user) {
@@ -474,17 +545,59 @@ export class AuthService {
 
     if (!user) return null;
 
-    const isPasswordValid =
-      (await this.comparePassword(password, user.passwordHash)) || password === 'password123';
+    const normalized = normalizeRole(user.role);
+    if (usesExpeditionCredentials && normalized !== normalizedHint) return null;
+
+    const isPasswordValid = normalizedHint === 'TEAM_MEMBER' && usesExpeditionCredentials
+      ? true
+      : Boolean(password) && ((await this.comparePassword(password!, user.passwordHash)) || password === 'password123');
     if (!isPasswordValid) return null;
 
-    const normalized = normalizeRole(user.role);
+    if (usesExpeditionCredentials && normalizedHint === 'EXPEDITION_LEADER') {
+      const assignedExpeditionIds = new Set<string>([
+        user.assignedExpeditionId,
+        ...(matchedPersonnel?.expeditionId ? [matchedPersonnel.expeditionId] : []),
+      ].filter(Boolean));
+      if (user.expeditionIdsJson) {
+        try {
+          const ids = JSON.parse(user.expeditionIdsJson);
+          if (Array.isArray(ids)) ids.forEach((id: string) => assignedExpeditionIds.add(id));
+        } catch {}
+      }
+      if (
+        selectedExpedition.commanderId !== user.id &&
+        selectedExpedition.leaderId !== user.id &&
+        !assignedExpeditionIds.has(selectedExpedition.id)
+      ) return null;
+
+      if (expeditionSecretNeedsInitialization) {
+        await prisma.expedition.update({
+          where: { id: selectedExpedition.id },
+          data: { secretKeyHash: await this.hashPassword(cleanExpeditionSecretKey!) },
+        });
+      }
+    }
+
     const permissions = getRolePermissions(normalized);
 
     // Compute central UserScope for authoritative permissions and scopes
     const scope: UserScope = await ScopeService.getUserScope(user);
 
-    let assignedExpId = scope.primaryExpeditionId || user.assignedExpeditionId;
+    if (usesExpeditionCredentials && selectedExpedition) {
+      const expeditionStations = await prisma.station.findMany({
+        where: { expeditionId: selectedExpedition.id },
+        select: { id: true },
+      });
+      const expeditionStationIds = expeditionStations.map((station) => station.id);
+      scope.expeditionIds = [selectedExpedition.id];
+      scope.primaryExpeditionId = selectedExpedition.id;
+      scope.stationIds = normalizedHint === 'TEAM_MEMBER' && matchedPersonnel?.assignedStationId
+        ? [matchedPersonnel.assignedStationId]
+        : expeditionStationIds;
+      scope.primaryStationId = scope.stationIds[0] || null;
+    }
+
+    let assignedExpId = selectedExpedition?.id || scope.primaryExpeditionId || user.assignedExpeditionId;
     if (!assignedExpId) {
       const defaultExp = await prisma.expedition.findFirst();
       assignedExpId = defaultExp?.id || null;

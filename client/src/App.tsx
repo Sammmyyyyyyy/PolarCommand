@@ -157,6 +157,26 @@ function MainApp() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !currentExpeditionId || currentPath.split('?')[0] !== '/alerts') return;
+
+    let isActive = true;
+    const refreshAlerts = async () => {
+      try {
+        const alerts = await fetchAlerts(currentExpeditionId);
+        if (isActive) setAlertsList(alerts);
+      } catch (err) {
+        console.warn('Live alert refresh failed:', err);
+      }
+    };
+
+    const intervalId = window.setInterval(refreshAlerts, 1000);
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [currentPath, currentExpeditionId, isAuthenticated]);
+
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
     if (window.location.pathname !== path) {

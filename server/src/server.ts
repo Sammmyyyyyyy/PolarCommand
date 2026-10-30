@@ -6,7 +6,8 @@ import { expeditionRouter } from './routes/expedition.routes.js';
 import { organizationRouter } from './routes/organization.routes.js';
 import { operationsRouter } from './routes/operations.routes.js';
 import { seedDemoData } from './seed/demo-data.js';
-import { authenticateJWT } from './middleware/auth.middleware.js';
+import { authenticateJWT, requireAuth, AuthenticatedRequest } from './middleware/auth.middleware.js';
+import { requirePermission, normalizeRole } from './middleware/authorization.js';
 import { ExpeditionService } from './services/expedition.service.js';
 import { CargoService } from './services/cargo.service.js';
 import { ActionService } from './services/action.service.js';
@@ -17,6 +18,7 @@ import { IncidentService } from './services/incident.service.js';
 import { AlertService } from './services/alert.service.js';
 import { SimulationService } from './services/simulation.service.js';
 import { StationService } from './services/station.service.js';
+import { ScopeService } from './services/scope.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -61,7 +63,7 @@ async function getDefaultExpeditionId(): Promise<string> {
 app.get('/api/dashboard', async (req, res) => {
   try {
     const expId = (req.query.expeditionId as string) || (await getDefaultExpeditionId());
-    const dashboard = await ExpeditionService.getDashboardSummary(expId);
+    const dashboard = await ExpeditionService.getDashboardSummary(expId, (req as AuthenticatedRequest).user);
     res.json(dashboard);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -82,6 +84,16 @@ app.get('/api/stations/:id', async (req, res) => {
   try {
     const station = await StationService.getStation(req.params.id);
     if (!station) return res.status(404).json({ error: 'Station not found' });
+    const user = (req as AuthenticatedRequest).user;
+    if (user) {
+      const role = normalizeRole(user.role);
+      if (role !== 'ADMIN' && role !== 'LOGISTICS_COMMANDER') {
+        const scope = await ScopeService.getUserScope(user);
+        if (!scope.stationIds.includes(station.id)) {
+          return res.status(403).json({ error: 'You can only access stations assigned to your mission scope' });
+        }
+      }
+    }
     res.json(station);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -184,13 +196,35 @@ app.get('/api/alerts', async (req, res) => {
   }
 });
 
-app.post('/api/alerts', async (req, res) => {
+app.post('/api/alerts', requireAuth, requirePermission('alert:create'), async (req: AuthenticatedRequest, res) => {
   try {
-    const expId = req.body.expeditionId || (await getDefaultExpeditionId());
+    if (!req.body.expeditionId) {
+      return res.status(400).json({ error: 'An expedition is required to create an alert' });
+    }
+    const expedition = await prisma.expedition.findFirst({
+      where: {
+        OR: [
+          { id: req.body.expeditionId },
+          { code: String(req.body.expeditionId).toUpperCase() },
+        ],
+      },
+    });
+    if (!expedition) return res.status(404).json({ error: 'Expedition not found' });
+
+    const scope = await ScopeService.getUserScope(req.user);
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'ADMIN' && !scope.expeditionIds.includes(expedition.id)) {
+      return res.status(403).json({ error: 'You cannot create alerts outside your assigned expedition scope' });
+    }
+    if (role !== 'ADMIN' && req.body.stationId && !scope.stationIds.includes(req.body.stationId)) {
+      return res.status(403).json({ error: 'You can only raise station alerts within your assigned station scope' });
+    }
+
     const alert = await AlertService.createAlert({
       ...req.body,
-      expeditionId: expId,
-    });
+      expeditionId: expedition.id,
+      createdBy: req.user?.userId,
+    }, req.user);
     res.status(201).json(alert);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

@@ -154,6 +154,13 @@ export class AlertService {
     }
 
     const scope = await ScopeService.getUserScope(user);
+    const requestedExpedition = expeditionId
+      ? await prisma.expedition.findFirst({
+          where: { OR: [{ id: expeditionId }, { code: expeditionId.toUpperCase() }] },
+          select: { id: true },
+        })
+      : null;
+    const expeditionFilterId = requestedExpedition?.id || expeditionId;
 
     // 1. ADMIN: Unrestricted global visibility
     if (scope.isAdmin) {
@@ -196,8 +203,10 @@ export class AlertService {
         orConditions.push({ createdBy: scope.userId });
       }
 
+      const where: any = { OR: orConditions };
+      if (expeditionFilterId) where.expeditionId = expeditionFilterId;
       return prisma.alert.findMany({
-        where: { OR: orConditions },
+        where,
         orderBy: { createdAt: 'desc' },
         include: { actions: true, station: true },
       });
@@ -213,8 +222,10 @@ export class AlertService {
         orConditions.push({ recipientsJson: { contains: scope.userId } });
         orConditions.push({ createdBy: scope.userId });
       }
+      const where: any = { OR: orConditions };
+      if (expeditionFilterId) where.expeditionId = expeditionFilterId;
       return prisma.alert.findMany({
-        where: { OR: orConditions },
+        where,
         orderBy: { createdAt: 'desc' },
         include: { actions: true, station: true },
       });
@@ -234,8 +245,10 @@ export class AlertService {
         orConditions.push({ personnelId: user.assignedPersonnelId });
       }
 
+      const where: any = { OR: orConditions };
+      if (expeditionFilterId) where.expeditionId = expeditionFilterId;
       return prisma.alert.findMany({
-        where: { OR: orConditions },
+        where,
         orderBy: { createdAt: 'desc' },
         include: { actions: true, station: true },
       });

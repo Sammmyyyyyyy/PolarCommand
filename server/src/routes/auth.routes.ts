@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { authenticateJWT, requireAuth, AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { normalizeRole } from '../middleware/authorization.js';
 
 export const authRouter = Router();
 
@@ -16,16 +17,30 @@ authRouter.post('/login', async (req, res) => {
     logisticsCommanderId,
     role,
     stationName,
+    expeditionId,
+    expeditionSecretKey,
   } = req.body;
 
   const resolvedIdentifier =
     identifier || adminId || stationManagerId || expeditionLeaderId || memberId || logisticsCommanderId || email;
 
-  if (!resolvedIdentifier || !password) {
+  const normalizedRole = role ? normalizeRole(role) : undefined;
+  const requiresExpeditionCredentials = normalizedRole === 'EXPEDITION_LEADER' || normalizedRole === 'TEAM_MEMBER';
+  if (!resolvedIdentifier || (!password && normalizedRole !== 'TEAM_MEMBER')) {
     return res.status(400).json({ error: 'Identification and password are required' });
   }
+  if (requiresExpeditionCredentials && (!expeditionId || !expeditionSecretKey || String(expeditionSecretKey).trim().length < 8)) {
+    return res.status(400).json({ error: 'Expedition ID and an Expedition Secret Key of at least 8 characters are required' });
+  }
 
-  const result = await AuthService.authenticate(resolvedIdentifier, password, role, stationName);
+  const result = await AuthService.authenticate(
+    resolvedIdentifier,
+    password,
+    role,
+    stationName,
+    expeditionId,
+    expeditionSecretKey
+  );
   if (!result) {
     return res.status(401).json({ error: 'Invalid mission credentials or password' });
   }

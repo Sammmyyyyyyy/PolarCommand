@@ -21,10 +21,36 @@ import { DocumentService } from '../services/document.service.js';
 import { seedDemoData } from '../seed/demo-data.js';
 import { AuthenticatedRequest, requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/authorization.js';
+import { normalizeRole } from '../middleware/authorization.js';
+import { ScopeService } from '../services/scope.service.js';
+import { prisma } from '../config/database.js';
 
 export const expeditionRouter = Router();
 
 const p = (v: any): string => (Array.isArray(v) ? v[0] : String(v));
+
+expeditionRouter.param('id', async (req: Request, res: Response, next, id) => {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.user) return next();
+
+  try {
+    const role = normalizeRole(authReq.user.role);
+    if (role === 'ADMIN' || role === 'LOGISTICS_COMMANDER') return next();
+
+    const expedition = await prisma.expedition.findFirst({
+      where: { OR: [{ id }, { code: id.toUpperCase() }] },
+      select: { id: true },
+    });
+    if (!expedition) return res.status(404).json({ error: 'Expedition not found' });
+
+    const scope = await ScopeService.getUserScope(authReq.user);
+    if (scope.expeditionIds.includes(expedition.id)) return next();
+
+    return res.status(403).json({ error: 'You can only access expeditions assigned to your mission scope.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to verify expedition access' });
+  }
+});
 
 // List all expeditions
 expeditionRouter.get('/', async (req: Request, res: Response) => {
@@ -62,6 +88,14 @@ expeditionRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const expedition = await ExpeditionService.getExpedition(p(req.params.id));
     if (!expedition) return res.status(404).json({ error: 'Expedition not found' });
+    const user = (req as AuthenticatedRequest).user;
+    if (user) {
+      const scope = await ScopeService.getUserScope(user);
+      if (scope.isTeamMember || scope.isStationManager) {
+        expedition.stations = (expedition.stations || []).filter((station: any) => scope.stationIds.includes(station.id));
+        expedition.stationIds = (expedition.stationIds || []).filter((stationId: string) => scope.stationIds.includes(stationId));
+      }
+    }
     res.json(expedition);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to get expedition' });
@@ -91,7 +125,7 @@ expeditionRouter.delete('/:id', requireAuth, requirePermission('expedition:delet
 // Dynamic Dashboard for Expedition
 expeditionRouter.get('/:id/dashboard', async (req: Request, res: Response) => {
   try {
-    const summary = await ExpeditionService.getDashboardSummary(p(req.params.id));
+    const summary = await ExpeditionService.getDashboardSummary(p(req.params.id), (req as AuthenticatedRequest).user);
     res.json(summary);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to load dashboard telemetry' });
@@ -101,7 +135,7 @@ expeditionRouter.get('/:id/dashboard', async (req: Request, res: Response) => {
 // Stations
 expeditionRouter.get('/:id/stations', async (req: Request, res: Response) => {
   try {
-    const stations = await StationService.listStations(p(req.params.id));
+    const stations = await StationService.listStations(p(req.params.id), (req as any).user);
     res.json(stations);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -122,14 +156,14 @@ expeditionRouter.get('/:id/personnel', async (req: Request, res: Response) => {
   try {
     const role = req.query.role as string;
     const status = req.query.status as string;
-    const personnel = await PersonnelService.listPersonnel(p(req.params.id), role, status);
+    const personnel = await PersonnelService.listPersonnel(p(req.params.id), role, status, (req as any).user);
     res.json(personnel);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-expeditionRouter.post('/:id/personnel', async (req: AuthenticatedRequest, res: Response) => {
+expeditionRouter.post('/:id/personnel', requireAuth, requirePermission('personnel:manage'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const person = await PersonnelService.createPersonnel(p(req.params.id), req.body, req.user);
     res.status(201).json(person);
@@ -370,7 +404,7 @@ expeditionRouter.post('/:id/incidents/:incId/dispatch', async (req: Authenticate
 // Alerts
 expeditionRouter.get('/:id/alerts', async (req: Request, res: Response) => {
   try {
-    const alerts = await AlertService.listAlerts(p(req.params.id));
+    const alerts = await AlertService.listAlerts(p(req.params.id), (req as AuthenticatedRequest).user);
     res.json(alerts);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -656,6 +690,16 @@ expeditionRouter.post('/:id/lifecycle', async (req: AuthenticatedRequest, res: R
 // -------------------------------------------------------------
 expeditionRouter.get('/:id/stations/:stationId/weather', async (req: Request, res: Response) => {
   try {
+    const user = (req as AuthenticatedRequest).user;
+    if (user) {
+      const role = normalizeRole(user.role);
+      if (role !== 'ADMIN' && role !== 'LOGISTICS_COMMANDER') {
+        const scope = await ScopeService.getUserScope(user);
+        if (!scope.stationIds.includes(p(req.params.stationId))) {
+          return res.status(403).json({ error: 'You can only access stations assigned to your mission scope' });
+        }
+      }
+    }
     const forceRefresh = req.query.refresh === 'true';
     const weather = await WeatherService.getStationWeather(p(req.params.stationId), forceRefresh);
     res.json(weather);

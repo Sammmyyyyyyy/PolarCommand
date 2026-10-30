@@ -22,6 +22,7 @@ export type Permission =
   | 'tracking:view_team'
   | 'incident:create'
   | 'incident:manage'
+  | 'alert:create'
   | 'simulation:run'
   | 'user:manage'
   | 'audit:read';
@@ -628,6 +629,7 @@ export interface Expedition {
   stationIdsJson?: string | null;
   memberIds?: string[];
   memberIdsJson?: string | null;
+  createdMemberIds?: string[];
   organizationId?: string | null;
   organization?: Organization;
   status: 'PLANNING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED' | 'Active' | 'Planning' | 'Completed';

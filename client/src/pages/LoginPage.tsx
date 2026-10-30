@@ -38,9 +38,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [adminId, setAdminId] = useState<string>('ADM-001');
   const [stationName, setStationName] = useState<string>('Bharati Station');
   const [stationManagerId, setStationManagerId] = useState<string>('SM-BHARATI-01');
-  const [expeditionLeaderId, setExpeditionLeaderId] = useState<string>('EL-001');
-  const [memberId, setMemberId] = useState<string>('TM-1029');
+  const [expeditionLeaderId, setExpeditionLeaderId] = useState<string>('leader@polarcommand.org');
+  const [memberId, setMemberId] = useState<string>('PER-024');
   const [logisticsCommanderId, setLogisticsCommanderId] = useState<string>('LC-001');
+  const [expeditionId, setExpeditionId] = useState<string>('AMERY-CORE-2027');
+  const [expeditionSecretKey, setExpeditionSecretKey] = useState<string>('');
 
   const [password, setPassword] = useState<string>('password123');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -90,9 +92,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     } else if (role === 'STATION_MANAGER') {
       if (!stationManagerId) setStationManagerId('SM-BHARATI-01');
     } else if (role === 'EXPEDITION_LEADER') {
-      if (!expeditionLeaderId) setExpeditionLeaderId('EL-001');
+      if (!expeditionLeaderId) setExpeditionLeaderId('leader@polarcommand.org');
     } else if (role === 'TEAM_MEMBER') {
-      if (!memberId) setMemberId('TM-1029');
+      if (!memberId) setMemberId('PER-024');
     } else if (role === 'LOGISTICS_COMMANDER') {
       if (!logisticsCommanderId) setLogisticsCommanderId('LC-001');
     }
@@ -141,7 +143,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       }
     }
 
-    if (!password) {
+    const needsExpeditionCredentials = selectedRole === 'EXPEDITION_LEADER' || selectedRole === 'TEAM_MEMBER';
+    if (needsExpeditionCredentials && !expeditionId.trim()) {
+      setErrorMsg('Please enter your Expedition ID or mission call sign.');
+      setIsLoading(false);
+      return;
+    }
+    if (needsExpeditionCredentials && expeditionSecretKey.trim().length < 8) {
+      setErrorMsg('Please enter the Expedition Secret Key (at least 8 characters).');
+      setIsLoading(false);
+      return;
+    }
+
+    if (selectedRole !== 'TEAM_MEMBER' && !password) {
       setErrorMsg('Please enter your password.');
       setIsLoading(false);
       return;
@@ -159,6 +173,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         password,
         role: selectedRole,
         stationName: selectedRole === 'STATION_MANAGER' ? stationName : undefined,
+        expeditionId: needsExpeditionCredentials ? expeditionId.trim() : undefined,
+        expeditionSecretKey: needsExpeditionCredentials ? expeditionSecretKey : undefined,
       });
 
       const verifiedRole = (user.role as PrimaryRole) || selectedRole;
@@ -432,7 +448,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             {selectedRole === 'EXPEDITION_LEADER' && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left">
-                  Expedition Leader ID
+                  Leader Login ID (email or account ID)
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -440,7 +456,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     type="text"
                     value={expeditionLeaderId}
                     onChange={(e) => setExpeditionLeaderId(e.target.value)}
-                    placeholder="Enter Expedition Leader ID"
+                    placeholder="Enter your leader account email or ID"
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition shadow-2xs"
                     required
                   />
@@ -467,6 +483,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               </div>
             )}
 
+            {(selectedRole === 'EXPEDITION_LEADER' || selectedRole === 'TEAM_MEMBER') && (
+              <>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left">
+                    Expedition ID / Mission Call Sign
+                  </label>
+                  <input
+                    type="text"
+                    value={expeditionId}
+                    onChange={(e) => setExpeditionId(e.target.value)}
+                    placeholder="Enter the assigned Expedition ID or call sign"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition shadow-2xs"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left">
+                    Expedition Secret Key
+                  </label>
+                  <input
+                    type="password"
+                    value={expeditionSecretKey}
+                    onChange={(e) => setExpeditionSecretKey(e.target.value)}
+                    placeholder="Enter the key issued for this expedition"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition shadow-2xs"
+                    required
+                    minLength={8}
+                  />
+                </div>
+              </>
+            )}
+
             {selectedRole === 'LOGISTICS_COMMANDER' && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left">
@@ -487,7 +535,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             )}
 
             {/* DYNAMIC FIELD 2: PASSWORD */}
-            <div>
+            {selectedRole !== 'TEAM_MEMBER' && <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 text-left">
                 Password
               </label>
@@ -509,7 +557,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
+            </div>}
 
             {/* SUBMIT BUTTON */}
             <div className="pt-2">

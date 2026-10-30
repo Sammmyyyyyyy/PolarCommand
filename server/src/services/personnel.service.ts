@@ -1,6 +1,7 @@
 import { prisma } from '../config/database.js';
 import { AuditService } from './audit.service.js';
 import { ScopeService } from './scope.service.js';
+import { AuthService } from './auth.service.js';
 
 export class PersonnelService {
   public static async listPersonnel(expeditionId?: string, role?: string, status?: string, user?: any) {
@@ -44,15 +45,53 @@ export class PersonnelService {
   }
 
   public static async createPersonnel(expeditionId: string, data: any, user?: any) {
+    const expedition = await prisma.expedition.findUnique({ where: { id: expeditionId } });
+    if (!expedition) throw new Error(`Expedition ${expeditionId} not found`);
+
+    const existingRoster = await prisma.personnel.findMany({
+      where: { expeditionId },
+      select: { memberId: true },
+    });
+    let memberId = String(data.memberId || '').trim();
+    if (!memberId) {
+      const usedIds = new Set(existingRoster.map((person) => person.memberId.toUpperCase()));
+      let nextNumber = 1;
+      while (usedIds.has(`PER-${String(nextNumber).padStart(3, '0')}`)) nextNumber++;
+      memberId = `PER-${String(nextNumber).padStart(3, '0')}`;
+    }
+    if (existingRoster.some((person) => person.memberId.toUpperCase() === memberId.toUpperCase())) {
+      throw new Error(`Member ID ${memberId} is already assigned to this expedition`);
+    }
+
+    let assignedStationId = data.assignedStationId || null;
+    const requestedStation = data.assignedStationId || data.stationId;
+    if (requestedStation) {
+      const expeditionStations = await prisma.station.findMany({
+        where: { expeditionId },
+        select: { id: true, code: true, name: true },
+      });
+      const requestedStationText = String(requestedStation).trim().toLowerCase();
+      const station = expeditionStations.find((candidate) =>
+        candidate.id === requestedStation ||
+        candidate.code.toLowerCase() === requestedStationText ||
+        candidate.name.toLowerCase().includes(requestedStationText)
+      );
+      if (station) assignedStationId = station.id;
+    }
+    if (!assignedStationId) {
+      const defaultStation = await prisma.station.findFirst({ where: { expeditionId }, select: { id: true } });
+      assignedStationId = defaultStation?.id || null;
+    }
+
     const person = await prisma.personnel.create({
       data: {
         expeditionId,
-        memberId: data.memberId || `PER-${Date.now().toString().slice(-4)}`,
+        memberId,
         name: data.name,
         role: data.role || 'Scientist',
         qualification: data.qualification || 'Polar Specialist',
         currentLocation: data.currentLocation || 'Base Station',
-        assignedStationId: data.assignedStationId || null,
+        assignedStationId,
         emergencyAvailability: data.emergencyAvailability || 'Available',
         contactInfo: data.contactInfo || 'VHF Ch-16 / Iridium Sat-Phone',
         movementSchedule: data.movementSchedule || 'Stationary On-Station',
@@ -61,6 +100,13 @@ export class PersonnelService {
         longitude: data.longitude ? Number(data.longitude) : null,
       },
       include: { assignedStation: true },
+    });
+
+    await AuthService.ensurePersonnelLoginUser(person, expedition);
+    const memberIds = existingRoster.map((member) => member.memberId).concat(person.memberId);
+    await prisma.expedition.update({
+      where: { id: expeditionId },
+      data: { memberIdsJson: JSON.stringify(memberIds) },
     });
 
     await AuditService.record({
